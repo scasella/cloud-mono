@@ -150,6 +150,10 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
     return this.source;
   }
 
+  getPositions(): readonly number[] {
+    return this.positions;
+  }
+
   subscribe(l: Listener) {
     this.listeners.add(l);
     return () => this.listeners.delete(l);
@@ -190,6 +194,11 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
       return null;
     }
     return h;
+  }
+
+  /** Forget optimistic values so the next real state wins (e.g. playback was blocked). */
+  protected clearHolds() {
+    this.holds.clear();
   }
 
   protected setCaps(c: Partial<Capabilities>) {

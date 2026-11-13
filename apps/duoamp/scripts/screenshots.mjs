@@ -149,6 +149,96 @@ async function main() {
     await capture('state-sheet-classic', { width: 382, height: 600 }, 3, 'sim=0&skin=classic', async (p) => {
       await p.click('.t-eject');
     });
+
+    // Spotify states, against the fake Spotify (scripts/fake-spotify.mjs): no real account involved.
+    const { FakeSpotify, CLIENT_ID } = await import('./fake-spotify.mjs');
+    const spotifyShot = async (name, viewport, query, fakeOpts, prep) => {
+      if (only && !name.includes(only)) return;
+      const ctx = await browser.newContext({ viewport, deviceScaleFactor: 3, hasTouch: true });
+      const fake = new FakeSpotify({ extraPlaylists: 9, ...fakeOpts });
+      await fake.install(ctx);
+      const page = await ctx.newPage();
+      page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
+      page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errors.push(`${name}: ${m.text()}`));
+      await page.goto(`${server.url}?test=1&${query}`);
+      await page.evaluate(() => document.fonts.ready);
+      const signIn = async () => {
+        await page.click('.t-eject');
+        await page.fill('.sheet-input', CLIENT_ID);
+        await page.click('.btn-connect');
+        await page.waitForFunction(() => window.duoamp?.spotify?.signedIn && window.duoamp.spotify.engine && !window.duoamp.spotify.busy && window.duoamp.spotify.playlists?.length, null, { timeout: 20000 });
+      };
+      const playRow = async (i) => {
+        // As if the row had been tapped (audio unlocked by a gesture).
+        fake.sdk.activated = true;
+        await page.evaluate(async () => {
+          const sp = window.duoamp.spotify;
+          await sp.loadSource(sp.playlistSource(sp.playlists[0]));
+        });
+        await page.evaluate((r) => window.duoamp.engine.playIndex(r), i);
+        await page.waitForFunction(() => window.duoamp.engine.getState().status === 'playing');
+        await page.evaluate(() => window.duoamp.engine.seek(70));
+      };
+      await prep(page, { signIn, playRow, fake });
+      await page.waitForTimeout(900);
+      const file = join(outDir, `${name}.png`);
+      await page.screenshot({ path: file });
+      shots.push(file);
+      fake.stop();
+      await ctx.close();
+    };
+    const cover = { width: 382, height: 600 };
+    for (const skin of SKINS) {
+      await spotifyShot(`spotify-connect-sheet-${skin}`, cover, `sim=0&skin=${skin}`, {}, async (p) => {
+        await p.click('.t-eject');
+      });
+      await spotifyShot(`spotify-library-sheet-${skin}`, cover, `sim=0&skin=${skin}`, {}, async (p, { signIn, playRow }) => {
+        await signIn();
+        await playRow(2);
+        await p.click('.t-eject');
+      });
+      await spotifyShot(`spotify-library-remote-${skin}`, cover, `sim=0&skin=${skin}`, { sdk: 'init_error' }, async (p, { signIn, playRow }) => {
+        await signIn();
+        await playRow(2);
+        await p.waitForTimeout(1500);
+        await p.click('.btn-pl-add');
+      });
+      await spotifyShot(`spotify-diagnostics-${skin}`, cover, `sim=0&skin=${skin}`, {}, async (p, { signIn, playRow }) => {
+        await signIn();
+        await playRow(2);
+        await p.click('.menu-btn');
+        await p.click('.menu .menu-item:has-text("DIAGNOSTICS")');
+      });
+      await spotifyShot(`spotify-playing-${skin}`, cover, `sim=0&skin=${skin}`, {}, async (p, { signIn, playRow }) => {
+        await signIn();
+        await playRow(30);
+      });
+      await spotifyShot(`spotify-art-${skin}`, cover, `sim=0&skin=${skin}`, {}, async (p, { signIn, playRow }) => {
+        await signIn();
+        await playRow(4);
+        await p.click('.btn-eq');
+        await p.evaluate(() => {
+          window.duoamp.prefs.visMode = 'art';
+        });
+      });
+      await spotifyShot(`spotify-menu-${skin}`, cover, `sim=0&skin=${skin}`, {}, async (p, { signIn, playRow }) => {
+        await signIn();
+        await playRow(4);
+        await p.click('.menu-btn');
+      });
+    }
+    await spotifyShot('spotify-library-book-classic', { width: 951, height: 600 }, 'sim=0&skin=classic', {}, async (p, { signIn, playRow }) => {
+      await signIn();
+      await playRow(8);
+      await p.click('.btn-pl-add');
+    });
+    await spotifyShot('spotify-art-book-light', { width: 951, height: 600 }, 'sim=0&skin=light', {}, async (p, { signIn, playRow }) => {
+      await signIn();
+      await playRow(8);
+      await p.evaluate(() => {
+        window.duoamp.prefs.visMode = 'art';
+      });
+    });
   } finally {
     await browser.close();
     server.stop();

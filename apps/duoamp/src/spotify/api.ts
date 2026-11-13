@@ -106,6 +106,7 @@ export class SpotifyApi {
       }
       if (res.status === 401 && !retried401) {
         retried401 = true;
+        this.record(401, path, 'token refreshed, retried');
         diag.info('api', `401 on ${method} ${logPath(path)}; refreshing token`);
         try {
           await this.auth.refresh(token);
@@ -117,8 +118,11 @@ export class SpotifyApi {
       if (res.status === 429) {
         const body = await this.readBody(res);
         const reason = this.reasonOf(body);
-        const ra = Number(res.headers.get('Retry-After'));
-        const secs = Number.isFinite(ra) && ra >= 0 ? ra : 1;
+        // Retry-After is only readable cross-origin if Spotify exposes it (CORS);
+        // when it is not readable, back off exponentially instead (2, 4, 8 s).
+        const raw = res.headers.get('Retry-After');
+        const ra = raw === null || raw.trim() === '' ? NaN : Number(raw);
+        const secs = Number.isFinite(ra) && ra >= 0 ? ra : Math.min(MAX_AUTO_WAIT_S, 2 ** (n429 + 1));
         this.blockedUntil = Math.max(this.blockedUntil, Date.now() + secs * 1000);
         this.record(429, path, reason ?? `retry-after ${secs}s`);
         diag.warn('api', `429 on ${method} ${logPath(path)}; Retry-After ${secs}s${reason ? ` (${reason})` : ''}`);

@@ -1,5 +1,5 @@
 import { TOUCH } from '../../config';
-import type { PlayerState } from '../../engine/types';
+import type { PlayerState, Track } from '../../engine/types';
 import type { AppContext, WinComponent } from '../context';
 import { titleBar, windowTitle } from '../context';
 import { fmtTime, h } from '../dom';
@@ -28,6 +28,8 @@ export class PlaylistWindow implements WinComponent {
   private lastTap = { row: -1, t: 0 };
   private u = 1;
   private firstLayout = true;
+  /** Tracks the rows were built from, to append instead of rebuilding while a list streams in. */
+  private builtFrom: readonly Track[] = [];
 
   constructor(private ctx: AppContext) {
     const { engine } = ctx;
@@ -41,7 +43,7 @@ export class PlaylistWindow implements WinComponent {
     this.thumb = h('div', 'pl-thumb');
     this.bar = h('div', 'pl-scrollbar', [this.thumb], { 'aria-hidden': 'true' });
 
-    const add = new SkinButton({ cls: 'btn-toggle btn-pl-add', label: 'ADD', aria: 'Add music', onPress: () => ctx.openSheet('connect', add.el) });
+    const add = new SkinButton({ cls: 'btn-toggle btn-pl-add', label: 'ADD', aria: 'Add music', onPress: () => ctx.openSheet('library', add.el) });
     const now = new SkinButton({ cls: 'btn-toggle btn-pl-now', label: 'NOW', aria: 'Jump to current track', onPress: () => this.jumpToCurrent() });
     this.info1 = h('div', 'pl-info-line');
     this.info2 = h('div', 'pl-info-line');
@@ -59,6 +61,7 @@ export class PlaylistWindow implements WinComponent {
     engine.subscribe((s, kinds) => {
       this.state = s;
       if (kinds.has('tracks')) this.build();
+      else if (kinds.has('caps')) this.renderInfo();
       if (kinds.has('track') || kinds.has('tracks')) this.setCurrent(s.index, true);
     });
     this.build();
@@ -67,22 +70,44 @@ export class PlaylistWindow implements WinComponent {
 
   private build() {
     const s = this.state;
-    this.rowsEl.textContent = '';
-    this.rows = [];
-    this.names = [];
-    s.tracks.forEach((t, i) => {
+    const old = this.builtFrom;
+    const appendOnly = old.length > 0 && s.tracks.length >= old.length && old.every((t, i) => s.tracks[i] === t);
+    let from = 0;
+    if (appendOnly) from = old.length;
+    else {
+      this.rowsEl.textContent = '';
+      this.rows = [];
+      this.names = [];
+      this.selected = -1;
+      this.current = -1;
+    }
+    const frag = document.createDocumentFragment();
+    for (let i = from; i < s.tracks.length; i++) {
+      const t = s.tracks[i];
       const name = h('span', 'pl-name');
       const dur = h('span', 'pl-dur', fmtTime(t.duration));
       const row = h('div', 'pl-row', [name, dur], { role: 'option', 'data-i': String(i) });
       this.rows.push(row);
       this.names.push(name);
-      this.rowsEl.append(row);
-    });
+      frag.append(row);
+    }
+    this.rowsEl.append(frag);
+    this.builtFrom = s.tracks;
+    this.renderInfo();
+    if (appendOnly && this.charsFit > 0) this.truncateRange(from, this.charsFit);
+    else {
+      this.charsFit = 0;
+      this.truncate();
+    }
+    this.syncThumb();
+  }
+
+  /** Footer LCD: "SPOTIFY: <playlist>" (attribution) / track count + total time. */
+  private renderInfo() {
+    const s = this.state;
     const total = s.tracks.reduce((a, t) => a + t.duration, 0);
-    this.info1.textContent = pixelText(s.sourceLabel);
-    this.info2.textContent = `${s.tracks.length} TRACKS ${fmtTime(total)}`;
-    this.charsFit = 0;
-    this.truncate();
+    this.info1.textContent = pixelText(s.serviceLabel ? `${s.serviceLabel}: ${s.sourceLabel}` : s.sourceLabel);
+    this.info2.textContent = `${s.tracks.length} TRACKS ${fmtTime(total)}${s.loading ? ' ...' : ''}`;
   }
 
   /** Classic ".." truncation; DuoPixel is monospaced so this is exact. */
@@ -96,10 +121,16 @@ export class PlaylistWindow implements WinComponent {
     const chars = Math.max(4, Math.floor((avail + ls) / (fs * ADVANCE_EM + ls)));
     if (chars === this.charsFit) return;
     this.charsFit = chars;
-    this.state.tracks.forEach((t, i) => {
+    this.truncateRange(0, chars);
+  }
+
+  private truncateRange(from: number, chars: number) {
+    const tracks = this.state.tracks;
+    for (let i = from; i < tracks.length && i < this.names.length; i++) {
+      const t = tracks[i];
       const full = pixelText(`${i + 1}. ${t.artist} - ${t.title}`);
       this.names[i].textContent = full.length <= chars ? full : full.slice(0, chars - 2) + '..';
-    });
+    }
   }
 
   private rowAt(e: PointerEvent): number {
@@ -126,14 +157,14 @@ export class PlaylistWindow implements WinComponent {
       const now = performance.now();
       if (this.lastTap.row === row && now - this.lastTap.t < TOUCH.doubleTapMs + 80) {
         this.lastTap = { row: -1, t: 0 };
-        this.ctx.engine.playIndex(row);
+        void this.ctx.engine.playIndex(row);
       } else {
         this.lastTap = { row, t: now };
         this.select(row);
       }
     });
     this.scroller.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && this.selected >= 0) this.ctx.engine.playIndex(this.selected);
+      if (e.key === 'Enter' && this.selected >= 0) void this.ctx.engine.playIndex(this.selected);
     });
   }
 
@@ -144,6 +175,7 @@ export class PlaylistWindow implements WinComponent {
   }
 
   private setCurrent(i: number, scroll: boolean) {
+    if (i === this.current && this.rows[i]?.classList.contains('is-current')) return;
     if (this.current >= 0) this.rows[this.current]?.classList.remove('is-current');
     this.current = i;
     const row = this.rows[i];

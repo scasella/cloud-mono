@@ -589,3 +589,188 @@
   width: calc(var(--u) * 40);
   height: calc(var(--u) * 14);
 }
+
+/* ---- Spotify phase additions (built from the existing tokens only) ------ */
+
+/* Cover art: the image as supplied, scaled to fit, never cropped, nothing over it. */
+.vis-art,
+.vis-art-none {
+  display: none;
+}
+
+.is-art .vis-art[src]:not(.is-broken) {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+.is-art:not(.has-art) .vis-art-none,
+.is-art .vis-art.is-broken + .vis-art-none {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  font-family: 'DuoPixel', monospace;
+  font-size: var(--fs-menu);
+  color: var(--lcd-text-dim);
+  pointer-events: none;
+}
+
+/* Controls the playback state disallows: dimmed, still pressable (the marquee says why). */
+.btn[aria-disabled='true'] > *,
+.slider[aria-disabled='true'] .slider-knob {
+  opacity: 0.45;
+}
+
+/* Sheets never exceed their pane; the body scrolls by touch. */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 8px);
+}
+
+.sheet-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+
+.sheet-body::-webkit-scrollbar {
+  display: none;
+}
+
+.sheet-body .btn,
+.sheet-body .lib-row {
+  touch-action: pan-y;
+}
+
+.sheet-actions {
+  flex: none;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 4);
+}
+
+.sheet.is-wide {
+  width: calc(var(--u) * 260);
+}
+
+.sheet-head {
+  margin-top: calc(var(--u) * 5);
+  padding-top: calc(var(--u) * 2);
+  border-top: calc(var(--u) * 0.75) dotted currentColor;
+}
+
+.sheet-uri {
+  margin-top: calc(var(--u) * 2);
+  padding: calc(var(--u) * 1) calc(var(--u) * 2);
+  background: var(--pl-select-bg);
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.sheet-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 3);
+  margin-top: calc(var(--u) * 3);
+}
+
+.btn.sheet-btn {
+  position: relative;
+  height: calc(var(--u) * 14);
+  padding: 0 calc(var(--u) * 6);
+}
+
+.sheet-input {
+  display: block;
+  width: 100%;
+  margin-top: calc(var(--u) * 2);
+  padding: calc(var(--u) * 1) calc(var(--u) * 2);
+  border: 0;
+  border-bottom: calc(var(--u) * 0.75) dotted currentColor;
+  border-radius: 0;
+  outline: none;
+  background: var(--pl-select-bg);
+  color: inherit;
+  font-family: 'DuoPixel', monospace;
+  /* iOS zooms into inputs under 16px. */
+  font-size: max(16px, var(--fs-menu));
+  line-height: 1.25;
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: manipulation;
+}
+
+.sheet-note {
+  color: var(--lcd-text);
+}
+
+.sheet-warn {
+  margin-top: calc(var(--u) * 3);
+  padding: calc(var(--u) * 1) calc(var(--u) * 2);
+  background: var(--pl-current-bg);
+  color: var(--pl-current-text);
+}
+
+.sheet-body a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: calc(var(--u) * 0.75);
+  text-underline-offset: calc(var(--u) * 1.5);
+}
+
+.lib-list {
+  margin-top: calc(var(--u) * 2);
+}
+
+.pl-row.lib-row {
+  height: calc(var(--u) * 15);
+  line-height: calc(var(--u) * 15);
+  padding: 0 calc(var(--u) * 2);
+  font-size: var(--fs-menu);
+  cursor: pointer;
+}
+
+.lib-row.is-dim {
+  opacity: 0.55;
+}
+
+.lib-row.is-pressed {
+  background: var(--pl-select-bg);
+}
+
+.diag-pre {
+  margin-top: calc(var(--u) * 2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  line-height: calc(var(--u) * 9);
+}
+
+.menu-item-link {
+  text-decoration: none;
+  color: var(--btn-icon);
+}
+
+.diag-pre {
+  font: inherit;
+}
+
+.sheet-input::placeholder {
+  color: currentColor;
+  opacity: 0.45;
+}

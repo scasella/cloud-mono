@@ -1,4 +1,4 @@
-import type { PlayerEngine } from '../engine/types';
+import type { PlayerEngine, Track } from '../engine/types';
 import type { SwitchableEngine } from '../engine/switchable';
 import { SpotifyApi, SpotifyApiError } from './api';
 import { AuthError, SpotifyAuth, takeAuthCallback, type AuthCallback } from './auth';
@@ -47,6 +47,7 @@ export class SpotifyService {
   private listeners = new Set<() => void>();
   private loadSignal = { aborted: false };
   private startToken = 0;
+  private sessionToken = 0;
 
   constructor(private proxy: SwitchableEngine, private makeDemo: () => PlayerEngine, private volume: () => number) {
     this.auth = new SpotifyAuth();
@@ -136,6 +137,7 @@ export class SpotifyService {
   private toDemo() {
     this.loadSignal.aborted = true;
     this.startToken++;
+    this.sessionToken++;
     this.engine = null;
     this.profile = null;
     this.playlists = null;
@@ -150,7 +152,7 @@ export class SpotifyService {
   }
 
   private async startSignedIn(fresh: boolean) {
-    const token = ++this.startToken;
+    const token = ++this.sessionToken;
     try {
       this.profile = await this.library.profile();
       diag.info('api', `profile loaded (${this.profile.displayName})`);
@@ -158,9 +160,9 @@ export class SpotifyService {
       this.handleApiError(e, 'profile');
       if (!this.auth.signedIn) return;
     }
-    if (token !== this.startToken) return;
+    if (token !== this.sessionToken) return;
     await this.startEngine();
-    if (token !== this.startToken) return;
+    if (token !== this.sessionToken) return;
     void this.refreshLibrary();
     const last = this.lastSource();
     if (last) void this.loadSource(last, true);
@@ -184,8 +186,7 @@ export class SpotifyService {
     const prev = this.engine;
     const source = prev?.getSource() ?? null;
     const st = prev?.getState();
-    const carry = () => (source && st ? { source, tracks: st.tracks.slice(), positions: (prev as unknown as { positions: number[] }).positions.slice(), loading: st.loading } : null);
-    const carried = carry();
+    const carried = prev && source && st ? { source, tracks: st.tracks.slice(), positions: prev.getPositions().slice(), loading: st.loading } : null;
     const wantSdk = this.modePref === 'sdk' || (this.modePref === 'auto' && !this.sdkFallbackReason);
     this.busy = true;
     this.emit();
@@ -224,7 +225,7 @@ export class SpotifyService {
     this.emit();
   }
 
-  private install(e: SpotifyEngine, carried: { source: SourceInfo; tracks: import('../engine/types').Track[]; positions: number[]; loading: boolean } | null) {
+  private install(e: SpotifyEngine, carried: { source: SourceInfo; tracks: Track[]; positions: number[]; loading: boolean } | null) {
     if (carried) e.setTracks(carried.source, carried.tracks, carried.positions, carried.loading);
     else e.setTracks(null, [], [], false);
     this.engine = e;

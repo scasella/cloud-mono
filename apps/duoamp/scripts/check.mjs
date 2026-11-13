@@ -180,7 +180,7 @@ try {
   ok((await st()).status === 'stopped', 'keyboard V stops');
 
   await page.tap('.t-eject');
-  ok(await page.isVisible('.sheet:has-text("COMING SOON")'), 'eject opens connect sheet');
+  ok(await page.isVisible('.sheet-library:has-text("REDIRECT URI")'), 'eject opens the Spotify connect sheet (signed out)');
   await page.tap('.sheet-ok');
   ok((await page.locator('.sheet').count()) === 0, 'sheet closes');
 
@@ -195,6 +195,10 @@ try {
   // Visualiser tap cycles bars -> scope -> off.
   await page.tap('.vis-screen');
   ok((await prefs()).visMode === 'scope', 'vis tap -> scope');
+  await page.tap('.vis-screen');
+  ok((await prefs()).visMode === 'art', 'vis tap -> art');
+  await page.waitForTimeout(100);
+  ok(await page.isVisible('.vis-art-none'), 'art mode without artwork (demo) says NO COVER ART');
   await page.tap('.vis-screen');
   ok((await prefs()).visMode === 'off', 'vis tap -> off');
   await page.tap('.vis-screen');

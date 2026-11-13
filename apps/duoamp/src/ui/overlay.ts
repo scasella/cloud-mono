@@ -6,6 +6,9 @@ import { titleBar } from './context';
 import { h, svg } from './dom';
 import { pressable } from './controls';
 import { ICONS } from './icons';
+import { buildLibrarySheet } from './sheets/library';
+import { buildDiagSheet } from './sheets/diagnostics';
+import { para, sheetButton, type SheetSpec } from './sheets/kit';
 
 /**
  * Skinned menus and sheets. They open inside the pane that holds the control
@@ -13,6 +16,7 @@ import { ICONS } from './icons';
  */
 export class Overlays {
   private openEl: HTMLElement | null = null;
+  private disposeOpen: (() => void) | null = null;
   private onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') this.close();
   };
@@ -25,6 +29,8 @@ export class Overlays {
 
   close() {
     if (!this.openEl) return;
+    this.disposeOpen?.();
+    this.disposeOpen = null;
     this.openEl.remove();
     this.openEl = null;
     window.removeEventListener('keydown', this.onKey, true);
@@ -85,7 +91,7 @@ export class Overlays {
         this.ctx.commitPrefs();
         this.ctx.relayout();
       }),
-      group<VisMode>('VISUAL', [['bars', 'BARS'], ['scope', 'SCOPE'], ['off', 'OFF']], prefs.visMode, (v) => {
+      group<VisMode>('VISUAL', [['bars', 'BARS'], ['scope', 'SCOPE'], ['art', 'ART'], ['off', 'OFF']], prefs.visMode, (v) => {
         prefs.visMode = v;
         this.ctx.commitPrefs();
       }),
@@ -101,7 +107,19 @@ export class Overlays {
     };
     panel.append(
       h('div', 'menu-sep'),
-      item('CONNECT MUSIC SERVICE...', () => this.openSheet('connect', anchor)),
+      item(this.ctx.spotify.signedIn ? 'SPOTIFY LIBRARY...' : 'CONNECT SPOTIFY...', () => this.openSheet('library', anchor)),
+    );
+    // Attribution: link back to the current track on Spotify.
+    const cur = this.ctx.engine.getState();
+    if (cur.serviceLabel && cur.current?.externalUrl) {
+      const a = h('a', 'btn menu-item menu-item-link', [h('span', 'btn-label', 'OPEN TRACK IN SPOTIFY')], {
+        href: cur.current.externalUrl, target: '_blank', rel: 'noopener', role: 'menuitem',
+      });
+      a.addEventListener('click', () => setTimeout(() => this.close(), 0));
+      panel.append(a);
+    }
+    panel.append(
+      item('DIAGNOSTICS...', () => this.openSheet('diag', anchor)),
       item(`ABOUT ${APP_NAME}...`, () => this.openSheet('about', anchor)),
     );
     this.host(anchor, panel, (a, b, p) => this.dropdown(a, b, p));
@@ -124,34 +142,33 @@ export class Overlays {
   }
 
   openSheet(kind: SheetKind, from: HTMLElement) {
-    const close = h('button', 'btn sheet-close', [svg(ICONS.close)], { type: 'button', 'aria-label': 'Close' });
-    pressable(close, () => this.close());
-    const ok = h('button', 'btn btn-toggle sheet-ok', [h('span', 'btn-label', 'OK')], { type: 'button' });
-    pressable(ok, () => this.close());
     const body = h('div', 'lcd sheet-body');
-    let title: string;
-    if (kind === 'connect') {
-      title = 'CONNECT A MUSIC SERVICE';
-      body.append(
-        h('div', 'sheet-big', 'COMING SOON'),
-        h('p', '', 'STREAMING SERVICES WILL PLUG IN HERE.'),
-        h('p', '', `UNTIL THEN ${APP_NAME} PLAYS A SILENT DEMO LIBRARY.`),
-        h('div', 'sheet-row', [h('span', '', 'SPOTIFY'), h('span', 'dim', 'SOON')]),
-        h('div', 'sheet-row', [h('span', '', 'OTHER SERVICES'), h('span', 'dim', 'LATER')]),
-      );
+    const closeFn = () => this.close();
+    let spec: SheetSpec;
+    if (kind === 'library') {
+      spec = buildLibrarySheet(this.ctx, body, closeFn, () => this.openSheet('diag', from));
+    } else if (kind === 'diag') {
+      const d = buildDiagSheet(this.ctx, body);
+      spec = { ...d, actions: [...d.actions, sheetButton('OK', closeFn, 'sheet-ok')] };
     } else {
-      title = `ABOUT ${APP_NAME}`;
       body.append(
         h('div', 'sheet-big', `${APP_NAME} ${APP_VERSION}`),
         h('p', '', 'A RETRO DECK FOR ONE, TWO OR FOLDED SCREENS.'),
         h('p', '', 'ALL ARTWORK IS DRAWN IN CODE.'),
         h('p', '', 'TEXT FACE: DUOPIXEL, DRAWN FOR THIS PROJECT. LABELS: SILKSCREEN BY JASON KOTTKE (SIL OPEN FONT LICENSE 1.1).'),
+        para('MUSIC, TRACK DATA AND COVER ART: SPOTIFY. PLAYBACK RUNS THROUGH SPOTIFY; THE VISUALIZER IS SYNTHESIZED AND THE EQUALIZER DOES NOT CHANGE THE SOUND.'),
         h('p', 'dim', 'KEYS: Z X C V B = PREV PLAY PAUSE STOP NEXT. SPACE PAUSE. ARROWS VOLUME / SEEK. S SHUFFLE, R REPEAT.'),
       );
+      spec = { title: `ABOUT ${APP_NAME}`, actions: [sheetButton('OK', closeFn, 'sheet-ok')] };
     }
-    const head = titleBar(title);
+    const close = h('button', 'btn sheet-close', [svg(ICONS.close)], { type: 'button', 'aria-label': 'Close' });
+    pressable(close, closeFn);
+    const head = titleBar(spec.title);
     head.append(close);
-    const panel = h('div', 'popup sheet win', [head, body, h('div', 'sheet-actions', [ok])], { role: 'dialog', 'aria-label': title });
+    const panel = h('div', `popup sheet win sheet-${kind}${spec.wide ? ' is-wide' : ''}`, [head, body, h('div', 'sheet-actions', spec.actions)], {
+      role: 'dialog', 'aria-label': spec.title,
+    });
     this.host(from, panel, (a, b, p) => this.centre(a, b, p));
+    this.disposeOpen = spec.dispose ?? null;
   }
 }

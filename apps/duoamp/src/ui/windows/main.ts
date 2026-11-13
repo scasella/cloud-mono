@@ -38,6 +38,7 @@ export class MainWindow implements WinComponent {
   private plBtn: SkinButton;
   private shuffleBtn: SkinButton;
   private repBtn: SkinButton;
+  private transport: Record<'prev' | 'play' | 'pause' | 'next', SkinButton> = {} as never;
   private u = 1;
   private state: PlayerState;
   /** Marquee holds at the start of each track (ms timestamp). */
@@ -90,7 +91,13 @@ export class MainWindow implements WinComponent {
       aria: 'Volume',
       value: this.state.volume,
       onInput: (v, phase) => {
-        engine.setVolume(v);
+        if (!engine.getState().capabilities.volume) {
+          // The engine explains why (transient marquee notice); the knob snaps back on release.
+          if (phase === 'start') void engine.setVolume(v);
+          if (phase === 'end') this.vol.set(engine.getState().volume);
+          return;
+        }
+        void engine.setVolume(v);
         ctx.prefs.volume = v;
         ctx.commitPrefs();
         this.dragMessage(phase, `VOLUME: ${Math.round(v * 100)}%`);
@@ -106,7 +113,12 @@ export class MainWindow implements WinComponent {
       resetTo: 0.5,
       onInput: (v, phase) => {
         const b = v * 2 - 1;
-        engine.setBalance(b);
+        if (!engine.getState().capabilities.balance) {
+          if (phase === 'start') void engine.setBalance(b);
+          if (phase === 'end') this.bal.set((engine.getState().balance + 1) / 2);
+          return;
+        }
+        void engine.setBalance(b);
         ctx.prefs.balance = b;
         ctx.commitPrefs();
         const pct = Math.round(Math.abs(b) * 100);
@@ -145,7 +157,8 @@ export class MainWindow implements WinComponent {
         const d = engine.getState().duration;
         const t = v * d;
         if (phase === 'end') {
-          engine.seek(t);
+          // Sent once, on release; dragging only previews.
+          void engine.seek(t);
           this.dragMessage('end', '');
         } else {
           this.dragMessage(phase, `SEEK TO: ${fmtTime(t)}/${fmtTime(d)} (${Math.round(v * 100)}%)`);
@@ -161,18 +174,18 @@ export class MainWindow implements WinComponent {
       this.el.append(b.el);
       return b;
     };
-    tb('t-prev', ICONS.prev, 'Previous track', 8, () => engine.prev());
-    tb('t-play', ICONS.play, 'Play', 31, () => engine.play());
-    tb('t-pause', ICONS.pause, 'Pause', 54, () => engine.pause());
-    tb('t-stop', ICONS.stop, 'Stop', 77, () => engine.stop());
-    tb('t-next', ICONS.next, 'Next track', 100, () => engine.next());
-    const ej = tb('t-eject', ICONS.eject, 'Open music source', 127, () => ctx.openSheet('connect', ej.el));
+    this.transport.prev = tb('t-prev', ICONS.prev, 'Previous track', 8, () => void engine.prev());
+    this.transport.play = tb('t-play', ICONS.play, 'Play', 31, () => void engine.play());
+    this.transport.pause = tb('t-pause', ICONS.pause, 'Pause', 54, () => void engine.pause());
+    tb('t-stop', ICONS.stop, 'Stop', 77, () => void engine.stop());
+    this.transport.next = tb('t-next', ICONS.next, 'Next track', 100, () => void engine.next());
+    const ej = tb('t-eject', ICONS.eject, 'Open music source', 127, () => ctx.openSheet('library', ej.el));
 
     this.shuffleBtn = new SkinButton({
       cls: 'btn-toggle btn-shuffle', label: 'SHUFFLE', led: true, aria: 'Shuffle',
       onPress: () => {
         const on = !engine.getState().shuffle;
-        engine.setShuffle(on);
+        void engine.setShuffle(on);
         ctx.prefs.shuffle = on;
         ctx.commitPrefs();
         ctx.message(on ? 'SHUFFLE: ON' : 'SHUFFLE: OFF', 900);
@@ -183,7 +196,7 @@ export class MainWindow implements WinComponent {
       cls: 'btn-toggle btn-rep', label: 'REP', led: true, aria: 'Repeat',
       onPress: () => {
         const on = !engine.getState().repeat;
-        engine.setRepeat(on);
+        void engine.setRepeat(on);
         ctx.prefs.repeat = on;
         ctx.commitPrefs();
         ctx.message(on ? 'REPEAT: ON' : 'REPEAT: OFF', 900);
@@ -196,7 +209,7 @@ export class MainWindow implements WinComponent {
     this.el.append(this.shuffleBtn.el, this.repBtn.el, logo);
 
     engine.subscribe((s, kinds) => this.onState(s, kinds));
-    this.onState(this.state, new Set(['track', 'status', 'settings']));
+    this.onState(this.state, new Set(['track', 'status', 'settings', 'caps']));
   }
 
   private dragMessage(phase: 'start' | 'move' | 'end', text: string) {
@@ -224,18 +237,41 @@ export class MainWindow implements WinComponent {
 
   private onState(s: PlayerState, kinds: ReadonlySet<string>) {
     this.state = s;
-    if (kinds.has('track') || kinds.has('tracks')) {
-      const t = s.tracks[s.index];
-      this.marqueeStr = pixelText(t ? `${s.index + 1}. ${t.artist} - ${t.title} (${fmtTime(t.duration)})  ***  ` : `${windowTitle()}  ***  `);
-      this.marqueeOffset = 0;
-      this.holdUntil = performance.now() + MARQUEE_HOLD_MS;
-      this.marqueeText.style.transform = '';
-      this.kbps.textContent = String(t?.kbps ?? 256);
-      this.khz.textContent = String(t?.khz ?? 44);
-      const stereo = (t?.channels ?? 2) === 2;
-      this.stereo.classList.toggle('is-lit', stereo);
-      this.mono.classList.toggle('is-lit', !stereo);
+    if (kinds.has('track') || kinds.has('tracks') || kinds.has('caps')) {
+      // The current track may be outside the loaded list (index -1): no number then.
+      const t = s.current;
+      const num = s.index >= 0 ? `${s.index + 1}. ` : '';
+      const str = pixelText(t ? `${num}${t.artist} - ${t.title} (${fmtTime(s.duration || t.duration)})  ***  ` : `${windowTitle()}  ***  `);
+      if (str !== this.marqueeStr) {
+        this.marqueeStr = str;
+        this.marqueeOffset = 0;
+        this.holdUntil = performance.now() + MARQUEE_HOLD_MS;
+        this.marqueeText.style.transform = '';
+      }
+      if (s.capabilities.streamInfo) {
+        this.kbps.textContent = String(t?.kbps ?? 256);
+        this.khz.textContent = String(t?.khz ?? 44);
+        const stereo = (t?.channels ?? 2) === 2;
+        this.stereo.classList.toggle('is-lit', stereo);
+        this.mono.classList.toggle('is-lit', !stereo);
+      } else {
+        // The service does not disclose bitrate, sample rate or channels: show nothing that looks like data.
+        this.kbps.textContent = '---';
+        this.khz.textContent = '--';
+        this.stereo.classList.remove('is-lit');
+        this.mono.classList.remove('is-lit');
+      }
       this.renderMarquee();
+    }
+    if (kinds.has('caps')) {
+      const d = s.disallows;
+      this.transport.prev.setDisabled(d.prev);
+      this.transport.next.setDisabled(d.next);
+      this.transport.pause.setDisabled(d.pause && s.status === 'playing');
+      this.transport.play.setDisabled(d.resume && s.status !== 'playing');
+      this.seek.el.setAttribute('aria-disabled', String(d.seek || !s.capabilities.seek));
+      this.vol.el.setAttribute('aria-disabled', String(!s.capabilities.volume));
+      this.bal.el.setAttribute('aria-disabled', String(!s.capabilities.balance));
     }
     if (kinds.has('settings') || kinds.has('track')) {
       this.vol.set(s.volume);

@@ -94,6 +94,10 @@ export class SkinButton {
     this.el.classList.toggle('is-on', on);
     this.el.setAttribute('aria-pressed', String(on));
   }
+  /** Dimmed, still pressable: the engine explains why it ignores the press. */
+  setDisabled(off: boolean) {
+    this.el.setAttribute('aria-disabled', String(off));
+  }
 }
 
 export type SliderPhase = 'start' | 'move' | 'end';

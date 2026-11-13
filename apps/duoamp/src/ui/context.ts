@@ -1,4 +1,5 @@
 import type { PlayerEngine } from '../engine/types';
+import type { SpotifyService } from '../spotify/service';
 import type { EqStore } from '../eq';
 import type { Prefs } from '../prefs';
 import type { SkinId } from '../prefs';
@@ -7,10 +8,12 @@ import { h, svg } from './dom';
 import { ICONS } from './icons';
 import { pressable } from './controls';
 
-export type SheetKind = 'connect' | 'about';
+export type SheetKind = 'library' | 'diag' | 'about';
 
 export interface AppContext {
   engine: PlayerEngine;
+  /** Only the library and diagnostics sheets use this; windows talk to `engine`. */
+  spotify: SpotifyService;
   eq: EqStore;
   prefs: Prefs;
   /** Persist prefs after mutating them. */

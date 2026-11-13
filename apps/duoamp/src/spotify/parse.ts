@@ -49,7 +49,8 @@ export function parseTrack(o: unknown): Track | null {
     title: str(o.name) ?? 'UNTITLED',
     album: album ? str(album.name) : undefined,
     duration: ms / 1000,
-    artUrl: album ? pickImage(album.images) : undefined,
+    // The art view is ~360 CSS px wide on 3x screens: prefer the 640 px image.
+    artUrl: album ? pickImage(album.images, 600) : undefined,
     externalUrl: ext ?? (id ? `https://open.spotify.com/track/${id}` : undefined),
   };
 }

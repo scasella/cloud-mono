@@ -1,5 +1,6 @@
 import { GRID, type Posture } from '../config';
 import type { PlayerEngine } from '../engine/types';
+import type { SpotifyService } from '../spotify/service';
 import { EqStore, autoPresetFor } from '../eq';
 import { planLayout, watchLayoutChanges, type LayoutPlan } from '../posture';
 import { savePrefs, type Prefs, type SkinId, type UrlOverrides } from '../prefs';
@@ -109,11 +110,12 @@ export class App {
   private plan: LayoutPlan | null = null;
   private last = performance.now();
 
-  constructor(root: HTMLElement, engine: PlayerEngine, private prefs: Prefs, private url: UrlOverrides) {
+  constructor(root: HTMLElement, engine: PlayerEngine, spotify: SpotifyService, private prefs: Prefs, private url: UrlOverrides) {
     const eq = new EqStore(prefs.eq);
     const self = this;
     this.ctx = {
       engine,
+      spotify,
       eq,
       prefs,
       reducedMotion: prefersReducedMotion(),
@@ -153,13 +155,21 @@ export class App {
       dock: new DockWindow(),
     };
 
+    // Engine notices (errors, unsupported actions) go to the marquee.
+    engine.subscribeNotices((n) => this.ctx.message(n.text, n.level === 'info' ? 1800 : 3200));
+    // Audio unlock: engines that need a user gesture (iOS) get called synchronously
+    // inside every gesture, before any button handler runs (capture phase).
+    for (const ev of ['pointerup', 'touchend', 'keydown', 'click'] as const) {
+      window.addEventListener(ev, () => engine.userGesture(), { capture: true, passive: true });
+    }
+
     eq.subscribe(() => {
       prefs.eq = eq.get();
       this.commit();
     });
     engine.subscribe((s, kinds) => {
       if (kinds.has('track') && eq.get().auto) {
-        const t = s.tracks[s.index];
+        const t = s.current;
         if (t) {
           const p = autoPresetFor(t.id);
           eq.applyPreset(p);
@@ -296,18 +306,19 @@ export class App {
     const k = e.key.toLowerCase();
     let handled = true;
     switch (k) {
-      case 'z': en.prev(); break;
-      case 'x': en.play(); break;
-      case 'c': en.pause(); break;
-      case 'v': en.stop(); break;
-      case 'b': en.next(); break;
-      case ' ': en.togglePause(); break;
-      case 's': en.setShuffle(!s.shuffle); this.prefs.shuffle = !s.shuffle; this.commit(); break;
-      case 'r': en.setRepeat(!s.repeat); this.prefs.repeat = !s.repeat; this.commit(); break;
+      case 'z': void en.prev(); break;
+      case 'x': void en.play(); break;
+      case 'c': void en.pause(); break;
+      case 'v': void en.stop(); break;
+      case 'b': void en.next(); break;
+      case ' ': void en.togglePause(); break;
+      case 's': void en.setShuffle(!s.shuffle); this.prefs.shuffle = !s.shuffle; this.commit(); break;
+      case 'r': void en.setRepeat(!s.repeat); this.prefs.repeat = !s.repeat; this.commit(); break;
       case 'arrowup':
       case 'arrowdown': {
         const v = Math.max(0, Math.min(1, s.volume + (k === 'arrowup' ? 0.05 : -0.05)));
-        en.setVolume(v);
+        void en.setVolume(v);
+        if (!s.capabilities.volume) break; // the engine posts why
         this.prefs.volume = v;
         this.commit();
         this.ctx.message(`VOLUME: ${Math.round(v * 100)}%`, 900);
@@ -315,7 +326,7 @@ export class App {
       }
       case 'arrowleft':
       case 'arrowright':
-        if (s.status !== 'stopped') en.seek(en.getPosition() + (k === 'arrowright' ? 5 : -5));
+        if (s.status !== 'stopped') void en.seek(en.getPosition() + (k === 'arrowright' ? 5 : -5));
         break;
       default:
         handled = false;

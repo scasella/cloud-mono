@@ -166,6 +166,8 @@ export class SdkEngine extends SpotifyEngineBase {
         this.autoplayFails++;
         this.ev('autoplay_failed', `#${this.autoplayFails}`);
         this.unlocked = false;
+        // Playback arrived paused: show that now, not the optimistic "playing".
+        this.clearHolds();
         if (this.autoplayFails >= AUTOPLAY_FAILS_BEFORE_FALLBACK) {
           this.hooks.onFatal('autoplay_failed', 'THIS BROWSER BLOCKED AUDIO; SWITCHING TO REMOTE CONTROL');
         } else {

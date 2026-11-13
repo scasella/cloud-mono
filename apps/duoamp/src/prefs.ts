@@ -1,7 +1,7 @@
 import type { LayoutPref, Posture } from './config';
 
 export type SkinId = 'light' | 'classic';
-export type VisMode = 'bars' | 'scope' | 'off';
+export type VisMode = 'bars' | 'scope' | 'art' | 'off';
 export type TimeMode = 'elapsed' | 'remaining';
 
 export interface EqSettings {
@@ -47,7 +47,7 @@ export const DEFAULT_PREFS: Prefs = {
 
 const SKINS: SkinId[] = ['light', 'classic'];
 const LAYOUTS: LayoutPref[] = ['auto', 'cover', 'book', 'tabletop'];
-const VIS: VisMode[] = ['bars', 'scope', 'off'];
+const VIS: VisMode[] = ['bars', 'scope', 'art', 'off'];
 
 function sanitize(raw: unknown): Prefs {
   const p = structuredClone(DEFAULT_PREFS);

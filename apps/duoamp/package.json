@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "screenshots": "node scripts/screenshots.mjs",
-    "build:font": "node scripts/build-font.mjs"
+    "build:font": "node scripts/build-font.mjs",
+    "dev:spotify": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "check": "node scripts/check.mjs",
+    "check:spotify": "node scripts/check-spotify.mjs",
+    "build:icons": "node scripts/build-icons.mjs"
   },
   "devDependencies": {
     "opentype.js": "^1.3.4",

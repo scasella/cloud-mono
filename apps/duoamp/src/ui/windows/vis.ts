@@ -7,30 +7,55 @@ import { pressable } from '../controls';
 import { PixelCanvas } from '../pixels';
 import { Bars } from '../bars';
 
-const MODES: VisMode[] = ['bars', 'scope', 'off'];
+const MODES: VisMode[] = ['bars', 'scope', 'art', 'off'];
 /** Bar geometry per skin (units): light = finely segmented, classic = solid chunky bars. */
 const GEOM = { light: { w: 5, gap: 2 }, classic: { w: 6, gap: 1 } } as const;
 
-/** Spectrum analyser / oscilloscope. Tap cycles bars -> scope -> off. */
+/**
+ * Spectrum analyser / oscilloscope / cover art. Tap cycles bars -> scope -> art -> off.
+ * ART shows the current track's artwork exactly as supplied: scaled to fit
+ * (object-fit: contain, never cropped or stretched) with nothing drawn over it.
+ */
 export class VisWindow implements WinComponent {
   readonly el: HTMLElement;
   private canvas = new PixelCanvas('vis-canvas');
   private bars = new Bars(32);
   private wave = new Float32Array(256);
   private u = 1;
+  private art: HTMLImageElement;
+  private artNone: HTMLElement;
+  private artUrl = '';
 
   constructor(private ctx: AppContext) {
     this.el = h('section', 'win win-vis', [], { 'aria-label': 'Visualization' });
     this.el.append(titleBar(windowTitle('VISUALIZATION')));
-    const screen = h('button', 'lcd vis-screen', [this.canvas.el], { type: 'button', 'aria-label': 'Cycle visualization mode' });
+    this.art = h('img', 'vis-art', [], { alt: '', decoding: 'async', draggable: 'false' });
+    this.art.addEventListener('error', () => this.art.classList.add('is-broken'));
+    this.art.addEventListener('load', () => this.art.classList.remove('is-broken'));
+    this.artNone = h('span', 'vis-art-none', 'NO COVER ART');
+    const screen = h('button', 'lcd vis-screen', [this.canvas.el, this.art, this.artNone], { type: 'button', 'aria-label': 'Cycle visualization mode' });
     pressable(screen, () => {
       const i = MODES.indexOf(ctx.prefs.visMode);
       ctx.prefs.visMode = MODES[(i + 1) % MODES.length];
       ctx.commitPrefs();
-      const label = { bars: 'SPECTRUM ANALYZER', scope: 'OSCILLOSCOPE', off: 'VISUALIZATION OFF' }[ctx.prefs.visMode];
+      const label = { bars: 'SPECTRUM ANALYZER', scope: 'OSCILLOSCOPE', art: 'COVER ART', off: 'VISUALIZATION OFF' }[ctx.prefs.visMode];
       ctx.message(`VIS: ${label}`, 1200);
     });
     this.el.append(screen);
+  }
+
+  private syncArt(on: boolean) {
+    const cur = this.ctx.engine.getState().current;
+    const url = on ? cur?.artUrl ?? '' : '';
+    if (url !== this.artUrl) {
+      this.artUrl = url;
+      if (url) {
+        this.art.src = url;
+        this.art.alt = cur?.album ? `Cover art: ${cur.album}` : 'Cover art';
+      } else this.art.removeAttribute('src');
+    }
+    this.el.classList.toggle('is-art', on);
+    this.el.classList.toggle('has-art', on && !!url);
   }
 
   layout(u: number) {
@@ -51,8 +76,9 @@ export class VisWindow implements WinComponent {
     if (c.width < 2) return;
     const tk = SKINS[this.ctx.prefs.skin];
     const mode = this.ctx.prefs.visMode;
+    this.syncArt(mode === 'art');
     c.clear(tk.visBg);
-    if (mode === 'off') return;
+    if (mode === 'off' || mode === 'art') return;
     const W = c.wU;
     const H = c.hU;
     if (mode === 'scope') {

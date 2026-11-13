@@ -1,0 +1,547 @@
+/*
+ * Window structure shared by both skins. Every length is a multiple of --u
+ * (CSS px per grid unit, set per pane). Shape and colour differences between
+ * skins are in skins.css.
+ */
+
+.win {
+  position: absolute;
+  overflow: hidden;
+  --kw: calc(var(--u) * 10);
+  --kh: calc(var(--u) * 10);
+  --th: calc(var(--u) * 3);
+}
+
+/* ---- title bar --------------------------------------------------------- */
+
+.titlebar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(var(--u) * 14);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 4);
+  padding: 0 calc(var(--u) * 5);
+  pointer-events: none;
+}
+
+.titlebar > * {
+  pointer-events: auto;
+}
+
+.menu-btn,
+.menu-spacer,
+.sheet-close {
+  position: relative;
+  flex: none;
+  width: calc(var(--u) * 9);
+  height: calc(var(--u) * 9);
+}
+
+.rail {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.title-text {
+  flex: none;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* ---- LCD surfaces ------------------------------------------------------ */
+
+.lcd {
+  position: absolute;
+  overflow: hidden;
+  background: var(--lcd-bg);
+  color: var(--lcd-text);
+}
+
+.lcd-main canvas,
+.eq-graph canvas,
+.vis-screen canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.hit {
+  position: absolute;
+  background: transparent;
+}
+
+.marquee {
+  white-space: nowrap;
+  font-family: 'VT323', monospace;
+  font-size: var(--fs-marquee);
+  line-height: calc(var(--u) * 13);
+  padding-left: calc(var(--u) * 2);
+}
+
+.marquee-text {
+  display: inline-block;
+  will-change: transform;
+}
+
+.readout {
+  font-family: 'VT323', monospace;
+  font-size: var(--fs-readout);
+  line-height: calc(var(--u) * 10);
+  text-align: center;
+}
+
+.lbl {
+  position: absolute;
+  font-family: 'Silkscreen', monospace;
+  font-size: var(--fs-label);
+  line-height: calc(var(--u) * 8);
+  white-space: nowrap;
+  color: var(--label);
+}
+
+.lbl.ind {
+  color: var(--label-dim);
+}
+
+.lbl.ind.is-lit {
+  color: var(--label-lit);
+}
+
+/* ---- buttons ----------------------------------------------------------- */
+
+.btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 2);
+  color: var(--btn-icon);
+}
+
+/* Generous touch target beyond the drawn control. */
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--u) * -2.5) calc(var(--u) * -1);
+}
+
+.btn-label {
+  font-family: 'Silkscreen', monospace;
+  font-size: var(--fs-label);
+  line-height: 1;
+  white-space: nowrap;
+  padding-top: calc(var(--u) * 0.5);
+}
+
+.led {
+  flex: none;
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 3);
+  background: var(--led-off);
+}
+
+.is-on > .led {
+  background: var(--led-on);
+  box-shadow: 0 0 calc(var(--u) * 2) var(--led-glow);
+}
+
+.logo-tile {
+  font-family: 'Silkscreen', monospace;
+}
+
+.logo-d {
+  font-family: 'Silkscreen', monospace;
+  font-weight: 700;
+  font-size: var(--fs-title-sk);
+  line-height: 1;
+}
+
+/* ---- sliders ----------------------------------------------------------- */
+
+.slider {
+  position: absolute;
+  touch-action: none;
+}
+
+.slider::before {
+  content: '';
+  position: absolute;
+  inset: calc(var(--u) * -4) calc(var(--u) * -1);
+}
+
+.slider--v::before {
+  inset: calc(var(--u) * -2) calc(var(--u) * -2.5);
+}
+
+.slider-track,
+.slider-fill,
+.slider-knob {
+  position: absolute;
+  pointer-events: none;
+}
+
+.slider--h .slider-track {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--th);
+  transform: translateY(-50%);
+}
+
+.slider--h .slider-fill {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--kw) / 2 + (100% - var(--kw)) * var(--v));
+}
+
+.slider--h .slider-knob {
+  top: 50%;
+  width: var(--kw);
+  height: var(--kh);
+  left: calc((100% - var(--kw)) * var(--v));
+  transform: translateY(-50%);
+}
+
+.slider--v .slider-track {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: var(--th);
+  transform: translateX(-50%);
+}
+
+.slider--v .slider-fill {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--kh) / 2 + (100% - var(--kh)) * var(--v));
+}
+
+.slider--v .slider-knob {
+  left: 50%;
+  width: var(--kw);
+  height: var(--kh);
+  top: calc((100% - var(--kh)) * (1 - var(--v)));
+  transform: translateX(-50%);
+}
+
+.grip {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+
+/* ---- equalizer --------------------------------------------------------- */
+
+.eq-scale,
+.eq-freq {
+  text-align: center;
+}
+
+.eq-scale {
+  text-align: left;
+}
+
+/* ---- playlist ---------------------------------------------------------- */
+
+.pl-body {
+  left: calc(var(--u) * 6);
+  right: calc(var(--u) * 16);
+  top: calc(var(--u) * 15);
+  bottom: calc(var(--u) * 24);
+  background: var(--pl-bg);
+}
+
+.pl-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+
+.pl-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.pl-rows {
+  padding: calc(var(--u) * 0.5) 0 calc(var(--u) * 1);
+}
+
+.pl-row {
+  display: flex;
+  height: calc(var(--u) * 10);
+  padding: 0 calc(var(--u) * 2);
+  font-family: 'VT323', monospace;
+  font-size: var(--fs-pl);
+  line-height: calc(var(--u) * 10);
+  color: var(--pl-text);
+  white-space: nowrap;
+}
+
+.pl-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pl-dur {
+  flex: none;
+  margin-left: calc(var(--u) * 3);
+  color: var(--pl-dur);
+}
+
+.pl-row.is-selected {
+  background: var(--pl-select-bg);
+}
+
+.pl-row.is-current {
+  background: var(--pl-current-bg);
+  color: var(--pl-current-text);
+}
+
+.pl-row.is-current .pl-dur {
+  color: var(--pl-current-text);
+}
+
+.pl-scrollbar {
+  position: absolute;
+  right: calc(var(--u) * 6);
+  top: calc(var(--u) * 15);
+  bottom: calc(var(--u) * 24);
+  width: calc(var(--u) * 7);
+  background: var(--pl-scroll-track);
+  touch-action: none;
+}
+
+.pl-scrollbar::before {
+  content: '';
+  position: absolute;
+  inset: 0 calc(var(--u) * -5) 0 calc(var(--u) * -3);
+}
+
+.pl-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.pl-footer {
+  position: absolute;
+  left: calc(var(--u) * 6);
+  right: calc(var(--u) * 6);
+  bottom: calc(var(--u) * 3);
+  height: calc(var(--u) * 19);
+}
+
+.btn-pl-add,
+.btn-pl-now {
+  top: calc(var(--u) * 3);
+  width: calc(var(--u) * 26);
+  height: calc(var(--u) * 13);
+}
+
+.btn-pl-add {
+  left: 0;
+}
+
+.btn-pl-now {
+  left: calc(var(--u) * 30);
+}
+
+.pl-info {
+  left: calc(var(--u) * 104);
+  right: 0;
+  top: 0;
+  bottom: 0;
+  padding: calc(var(--u) * 1.5) calc(var(--u) * 3);
+  font-family: 'VT323', monospace;
+  font-size: var(--fs-info);
+  line-height: calc(var(--u) * 8);
+  white-space: nowrap;
+}
+
+/* ---- visualization ----------------------------------------------------- */
+
+.vis-screen {
+  left: calc(var(--u) * 6);
+  right: calc(var(--u) * 6);
+  top: calc(var(--u) * 15);
+  bottom: calc(var(--u) * 5);
+  background: var(--vis-bg);
+}
+
+.vis-screen::after {
+  display: none;
+}
+
+/* ---- dock (blank filler) ----------------------------------------------- */
+
+.dock-logo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Silkscreen', monospace;
+  font-weight: 700;
+  font-size: calc(var(--fs-title-sk) * 2);
+  letter-spacing: 0;
+  color: var(--chassis-shade);
+  text-shadow: 0 calc(var(--u) * 0.75) 0 var(--chassis-light);
+}
+
+/* ---- overlays ---------------------------------------------------------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+}
+
+.overlay-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+}
+
+.popup {
+  position: absolute;
+  overflow: visible;
+}
+
+.menu {
+  width: calc(var(--u) * 200);
+  padding: calc(var(--u) * 5) calc(var(--u) * 6) calc(var(--u) * 6);
+}
+
+.menu-head {
+  font-family: 'Silkscreen', monospace;
+  font-size: var(--fs-label);
+  color: var(--title-text);
+  padding-bottom: calc(var(--u) * 3);
+  letter-spacing: calc(var(--u) * 0.5);
+}
+
+.menu-group {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 3);
+  margin: calc(var(--u) * 3) 0;
+}
+
+.menu-label {
+  flex: none;
+  width: calc(var(--u) * 32);
+  font-family: 'Silkscreen', monospace;
+  font-size: var(--fs-label);
+  color: var(--label);
+}
+
+.menu-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 3);
+}
+
+.btn.chip,
+.btn.menu-item,
+.btn.sheet-ok {
+  position: relative;
+}
+
+.btn.chip {
+  height: calc(var(--u) * 13);
+  padding: 0 calc(var(--u) * 4);
+}
+
+.menu-sep {
+  height: calc(var(--u) * 1);
+  margin: calc(var(--u) * 5) 0 calc(var(--u) * 4);
+  background: var(--chassis-shade);
+  box-shadow: 0 calc(var(--u) * 1) 0 var(--chassis-light);
+}
+
+.btn.menu-item {
+  width: 100%;
+  height: calc(var(--u) * 14);
+  justify-content: flex-start;
+  padding: 0 calc(var(--u) * 6);
+  margin-top: calc(var(--u) * 3);
+}
+
+.presets {
+  width: calc(var(--u) * 92);
+}
+
+.preset-list {
+  max-height: calc(var(--u) * 190);
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding-bottom: calc(var(--u) * 1);
+}
+
+.preset-list::-webkit-scrollbar {
+  display: none;
+}
+
+.sheet {
+  width: calc(var(--u) * 236);
+  padding-top: calc(var(--u) * 16);
+}
+
+.sheet .titlebar .menu-spacer:last-of-type {
+  display: none;
+}
+
+.sheet-body {
+  position: relative;
+  margin: 0 calc(var(--u) * 7);
+  padding: calc(var(--u) * 5) calc(var(--u) * 6);
+  font-family: 'VT323', monospace;
+  font-size: var(--fs-menu);
+  line-height: calc(var(--u) * 10);
+  text-transform: uppercase;
+}
+
+.sheet-body p {
+  margin-top: calc(var(--u) * 3);
+}
+
+.sheet-big {
+  font-size: calc(var(--fs-menu) * 1.7);
+  line-height: calc(var(--u) * 16);
+}
+
+.sheet-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: calc(var(--u) * 4);
+  border-top: calc(var(--u) * 0.75) dotted currentColor;
+  padding-top: calc(var(--u) * 2);
+}
+
+.sheet-body .dim {
+  opacity: 0.62;
+}
+
+.sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: calc(var(--u) * 6) calc(var(--u) * 7) calc(var(--u) * 7);
+}
+
+.btn.sheet-ok {
+  width: calc(var(--u) * 40);
+  height: calc(var(--u) * 14);
+}

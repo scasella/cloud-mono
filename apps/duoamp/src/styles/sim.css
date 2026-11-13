@@ -1,0 +1,238 @@
+/* Simulator chrome: device bezel, mock status, fold line, control bar. */
+
+.stage[data-mode='sim'] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background:
+    radial-gradient(ellipse at 50% 35%, #34363f 0%, #1b1c21 60%, #121216 100%);
+}
+
+.sim-device {
+  position: relative;
+  flex: none;
+  background: linear-gradient(160deg, #26262c 0%, #101013 55%, #1c1c21 100%);
+  box-shadow:
+    0 30px 70px rgba(0, 0, 0, 0.55),
+    0 6px 18px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1.5px #3a3a43,
+    inset 0 0 0 4px #0b0b0d;
+}
+
+.stage[data-mode='sim'] .screen {
+  position: relative;
+}
+
+.sim-status {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: #f2f2f4;
+  font: 600 calc(15px * var(--z, 1)) / 1 -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.sim-pill {
+  position: relative;
+  margin-top: calc(48px * var(--z));
+  width: calc(36px * var(--z));
+  height: calc(104px * var(--z));
+  border-radius: calc(18px * var(--z));
+  background: #000;
+  box-shadow: inset 0 0 0 1px #1b1b20;
+}
+
+.sim-lens {
+  position: absolute;
+  left: 50%;
+  top: calc(30px * var(--z));
+  width: calc(22px * var(--z));
+  height: calc(22px * var(--z));
+  margin-left: calc(-11px * var(--z));
+  border-radius: calc(6px * var(--z));
+  background: radial-gradient(circle at 40% 35%, #eceaf3 0 18%, #a7a4b4 40%, #4a4856 75%);
+}
+
+.sim-dots {
+  position: absolute;
+  left: 50%;
+  bottom: calc(18px * var(--z));
+  width: calc(14px * var(--z));
+  margin-left: calc(-7px * var(--z));
+  height: calc(2px * var(--z));
+  background: repeating-linear-gradient(90deg, #56545f 0 calc(2px * var(--z)), transparent calc(2px * var(--z)) calc(3px * var(--z)));
+}
+
+.sim-clockbox {
+  margin-top: calc(70px * var(--z));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(6px * var(--z));
+}
+
+.sim-moon {
+  width: calc(15px * var(--z));
+  height: calc(15px * var(--z));
+}
+
+.sim-clock {
+  font-size: calc(19px * var(--z));
+  letter-spacing: -0.02em;
+}
+
+.sim-wifi {
+  position: relative;
+  margin-top: calc(14px * var(--z));
+  width: calc(46px * var(--z));
+  height: calc(46px * var(--z));
+}
+
+.sim-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.sim-wifi-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(20px * var(--z));
+  height: calc(15px * var(--z));
+  transform: translate(-50%, -58%);
+}
+
+.sim-ring-dots {
+  position: absolute;
+  left: 50%;
+  bottom: calc(4px * var(--z));
+  width: calc(16px * var(--z));
+  height: calc(3px * var(--z));
+  transform: translateX(-50%);
+  background: repeating-linear-gradient(90deg, #f2f2f4 0 calc(3px * var(--z)), transparent calc(3px * var(--z)) calc(4.3px * var(--z)));
+  border-radius: 2px;
+}
+
+/* Tabletop: horizontal status row at top-right. */
+.sim-status.is-row {
+  flex-direction: row;
+  justify-content: flex-end;
+  align-items: center;
+  gap: calc(16px * var(--z));
+  padding-right: calc(30px * var(--z));
+}
+
+.sim-status.is-row .sim-pill {
+  order: 3;
+  margin: 0;
+  width: calc(96px * var(--z));
+  height: calc(34px * var(--z));
+}
+
+.sim-status.is-row .sim-lens {
+  left: calc(22px * var(--z));
+  top: 50%;
+  margin: calc(-10px * var(--z)) 0 0;
+  width: calc(20px * var(--z));
+  height: calc(20px * var(--z));
+}
+
+.sim-status.is-row .sim-dots {
+  left: auto;
+  right: calc(18px * var(--z));
+  bottom: 50%;
+  margin: 0;
+}
+
+.sim-status.is-row .sim-clockbox {
+  order: 1;
+  margin: 0;
+  gap: calc(2px * var(--z));
+}
+
+.sim-status.is-row .sim-clock {
+  font-size: calc(15px * var(--z));
+}
+
+.sim-status.is-row .sim-moon {
+  width: calc(12px * var(--z));
+  height: calc(12px * var(--z));
+}
+
+.sim-status.is-row .sim-wifi {
+  order: 2;
+  margin: 0;
+  width: calc(40px * var(--z));
+  height: calc(40px * var(--z));
+}
+
+.sim-fold {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0) 0%, rgba(70, 70, 84, 0.55) 45%, rgba(20, 20, 26, 0.9) 50%, rgba(70, 70, 84, 0.55) 55%, rgba(0, 0, 0, 0) 100%);
+}
+
+.sim-fold.is-horizontal {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(70, 70, 84, 0.55) 45%, rgba(20, 20, 26, 0.9) 50%, rgba(70, 70, 84, 0.55) 55%, rgba(0, 0, 0, 0) 100%);
+}
+
+.sim-home {
+  position: absolute;
+  z-index: 6;
+  border-radius: 999px;
+  background: rgba(240, 240, 245, 0.82);
+  pointer-events: none;
+}
+
+.sim-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 18px;
+  padding: 0 16px;
+  font: 500 13px/1 system-ui, -apple-system, sans-serif;
+  color: #b9bac4;
+  -webkit-font-smoothing: antialiased;
+}
+
+.sim-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-cap {
+  margin-right: 4px;
+  color: #7e808c;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.sim-btn {
+  padding: 7px 11px;
+  border-radius: 7px;
+  background: #2a2b33;
+  color: #d9dae2;
+  box-shadow: inset 0 0 0 1px #3a3b45;
+  touch-action: manipulation;
+}
+
+.sim-btn.is-on {
+  background: #d9dae2;
+  color: #17181d;
+}
+
+.sim-info {
+  color: #6c6e7a;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

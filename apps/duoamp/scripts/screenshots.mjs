@@ -1,0 +1,136 @@
+#!/usr/bin/env node
+/**
+ * Builds the app, serves dist/ with `vite preview`, and captures every
+ * posture × skin, in simulator mode and full-bleed at the researched
+ * Safari viewport sizes, into ./screenshots (gitignored).
+ *
+ *   node scripts/screenshots.mjs            # build + capture all
+ *   node scripts/screenshots.mjs --no-build # reuse dist/
+ *   node scripts/screenshots.mjs --only=bleed-cover
+ *
+ * Uses the preinstalled Playwright (require('playwright')); it is not a dependency.
+ */
+import { spawn, execSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const { chromium } = require('playwright');
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const outDir = join(root, 'screenshots');
+const args = process.argv.slice(2);
+const only = args.find((a) => a.startsWith('--only='))?.slice(7);
+const PORT = 4179;
+
+export const SKINS = ['light', 'classic'];
+/** Full-bleed sizes from the Safari 27.1 viewport research (CSS px). Posture is auto-detected. */
+export const BLEED = [
+  { name: 'cover', w: 382, h: 600 },
+  { name: 'book', w: 951, h: 600 },
+  { name: 'book-867', w: 867, h: 600 },
+  { name: 'tabletop', w: 669, h: 880 },
+];
+export const SIM = ['cover', 'book', 'tabletop'];
+
+export async function startServer() {
+  const proc = spawn(process.execPath, [join(root, 'node_modules/vite/bin/vite.js'), 'preview', '--port', String(PORT), '--strictPort', '--host', '127.0.0.1'], {
+    cwd: root,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  await new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('vite preview did not start')), 20000);
+    proc.stdout.on('data', (d) => {
+      if (String(d).includes(String(PORT))) {
+        clearTimeout(t);
+        resolve();
+      }
+    });
+    proc.on('exit', (c) => reject(new Error(`vite preview exited ${c}`)));
+  });
+  proc.stdout.resume();
+  proc.stderr.resume();
+  return { url: `http://127.0.0.1:${PORT}/`, stop: () => proc.kill('SIGTERM') };
+}
+
+async function main() {
+  if (!args.includes('--no-build')) execSync('npx vite build', { cwd: root, stdio: 'inherit' });
+  mkdirSync(outDir, { recursive: true });
+  const server = await startServer();
+  const browser = await chromium.launch();
+  const errors = [];
+  const shots = [];
+  try {
+    const capture = async (name, viewport, dpr, query, prep) => {
+      if (only && !name.includes(only)) return;
+      const ctx = await browser.newContext({ viewport, deviceScaleFactor: dpr, hasTouch: true, isMobile: false });
+      const page = await ctx.newPage();
+      page.on('console', (m) => m.type() === 'error' && errors.push(`${name}: ${m.text()}`));
+      page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
+      await page.goto(`${server.url}?${query}`);
+      await page.evaluate(() => document.fonts.ready);
+      // Play from a fixed point so the LCD/visualiser have something to show.
+      await page.evaluate(() => {
+        const { engine } = window.duoamp;
+        engine.play();
+        engine.seek(70);
+      });
+      if (prep) await prep(page);
+      await page.waitForTimeout(1400);
+      const file = join(outDir, `${name}.png`);
+      await page.screenshot({ path: file });
+      shots.push(file);
+      await ctx.close();
+    };
+
+    for (const skin of SKINS) {
+      for (const b of BLEED) {
+        await capture(`bleed-${b.name}-${skin}`, { width: b.w, height: b.h }, 3, `sim=0&skin=${skin}`);
+      }
+      for (const p of SIM) {
+        await capture(`sim-${p}-${skin}`, { width: 1280, height: 1000 }, 2, `sim=1&layout=${p}&skin=${skin}`);
+      }
+    }
+    // A few states worth reviewing.
+    await capture('state-cover-noeq-light', { width: 382, height: 600 }, 3, 'sim=0&skin=light', async (p) => {
+      await p.click('.btn-eq');
+    });
+    // EQ visibility is remembered per posture; defaults match the photos (EQ on cover, Vis when open).
+    await capture('state-tabletop-eq-classic', { width: 669, height: 880 }, 3, 'sim=0&skin=classic', async (p) => {
+      await p.click('.btn-eq');
+    });
+    await capture('state-book-eq-light', { width: 951, height: 600 }, 3, 'sim=0&skin=light', async (p) => {
+      await p.click('.btn-eq');
+    });
+    await capture('state-book-scope-classic', { width: 951, height: 600 }, 3, 'sim=0&skin=classic', async (p) => {
+      await p.click('.vis-screen');
+    });
+    await capture('state-book-nopl-light', { width: 951, height: 600 }, 3, 'sim=0&skin=light', async (p) => {
+      await p.click('.btn-pl');
+    });
+    await capture('state-menu-light', { width: 382, height: 600 }, 3, 'sim=0&skin=light', async (p) => {
+      await p.click('.menu-btn');
+    });
+    await capture('state-menu-classic', { width: 951, height: 600 }, 3, 'sim=0&skin=classic', async (p) => {
+      await p.click('.menu-btn');
+    });
+    await capture('state-presets-light', { width: 382, height: 600 }, 3, 'sim=0&skin=light', async (p) => {
+      await p.click('.btn-presets');
+    });
+    await capture('state-sheet-classic', { width: 382, height: 600 }, 3, 'sim=0&skin=classic', async (p) => {
+      await p.click('.t-eject');
+    });
+  } finally {
+    await browser.close();
+    server.stop();
+  }
+  console.log(shots.map((s) => `  ${s}`).join('\n'));
+  if (errors.length) {
+    console.error('Console errors:\n' + errors.join('\n'));
+    process.exitCode = 1;
+  } else console.log(`${shots.length} screenshots, no console errors`);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) main().finally(() => setTimeout(() => process.exit(), 100));

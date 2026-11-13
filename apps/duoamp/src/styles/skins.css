@@ -1,0 +1,415 @@
+/*
+ * Shape differences between skins, keyed off html[data-skin]. Colours come
+ * from the token custom properties written by skins.ts.
+ *   light   : rounded windows, round transport buttons, pill toggles, round knobs
+ *   classic : square everything, bevels, grip-line slider thumbs, striped rails
+ */
+
+/* =========================== LIGHT =========================== */
+
+[data-skin='light'] .win {
+  border-radius: calc(var(--u) * 7);
+  background: linear-gradient(180deg, var(--chassis-hi) 0%, var(--chassis-lo) 100%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 0.75) var(--chassis-edge),
+    inset 0 calc(var(--u) * 1.5) 0 calc(var(--u) * -0.75) var(--chassis-light);
+}
+
+[data-skin='light'] .rail {
+  height: calc(var(--u) * 2.5);
+  border-radius: calc(var(--u) * 2);
+  background: var(--rail-lo);
+  box-shadow: 0 calc(var(--u) * 0.75) 0 var(--rail-hi);
+}
+
+[data-skin='light'] .win:not(.is-active) .rail {
+  background: var(--rail-inactive-lo);
+}
+
+[data-skin='light'] .title-text {
+  font-family: 'VT323', monospace;
+  font-size: var(--fs-title-vt);
+  color: var(--title-text);
+  letter-spacing: calc(var(--u) * 0.4);
+  padding-top: calc(var(--u) * 1);
+}
+
+[data-skin='light'] .win:not(.is-active) .title-text {
+  color: var(--title-text-inactive);
+}
+
+[data-skin='light'] .lcd {
+  border-radius: calc(var(--u) * 1.5);
+  box-shadow: inset 0 0 0 calc(var(--u) * 0.75) var(--lcd-edge), 0 calc(var(--u) * 0.75) 0 var(--chassis-light);
+}
+
+[data-skin='light'] .pl-body,
+[data-skin='light'] .vis-screen {
+  border-radius: calc(var(--u) * 1.5);
+}
+
+/* Buttons: soft lavender domes. */
+[data-skin='light'] .btn-transport,
+[data-skin='light'] .btn-toggle,
+[data-skin='light'] .menu-btn,
+[data-skin='light'] .sheet-close,
+[data-skin='light'] .chip,
+[data-skin='light'] .menu-item {
+  background: linear-gradient(180deg, var(--btn-hi) 15%, var(--btn-lo) 100%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 0.75) var(--btn-edge),
+    inset 0 calc(var(--u) * -1.5) calc(var(--u) * 1) calc(var(--u) * -0.5) var(--chassis-shade),
+    0 calc(var(--u) * 0.75) 0 var(--chassis-light);
+}
+
+[data-skin='light'] .btn-transport {
+  border-radius: 50%;
+}
+
+[data-skin='light'] .btn-toggle,
+[data-skin='light'] .chip,
+[data-skin='light'] .menu-item {
+  border-radius: calc(var(--u) * 7);
+}
+
+[data-skin='light'] .menu-btn,
+[data-skin='light'] .sheet-close {
+  border-radius: 50%;
+  color: var(--title-text);
+}
+
+[data-skin='light'] .menu-btn .icon,
+[data-skin='light'] .sheet-close .icon {
+  width: calc(var(--u) * 4.5);
+  height: calc(var(--u) * 4.5);
+}
+
+[data-skin='light'] .btn.is-pressed {
+  background: linear-gradient(180deg, var(--btn-pressed-hi) 0%, var(--btn-pressed-lo) 100%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 0.75) var(--btn-edge),
+    inset 0 calc(var(--u) * 1) calc(var(--u) * 1.5) var(--chassis-shade);
+}
+
+[data-skin='light'] .btn.is-pressed > * {
+  transform: translateY(calc(var(--u) * 0.5));
+}
+
+[data-skin='light'] .led {
+  border-radius: 50%;
+}
+
+[data-skin='light'] .btn-toggle .btn-label {
+  color: var(--label);
+}
+
+[data-skin='light'] .btn-toggle.is-on .btn-label {
+  color: var(--btn-icon);
+}
+
+[data-skin='light'] .logo-tile {
+  border-radius: calc(var(--u) * 3);
+  box-shadow: inset 0 0 0 calc(var(--u) * 0.75) var(--btn-edge), 0 calc(var(--u) * 0.75) 0 var(--chassis-light);
+  color: var(--label);
+}
+
+[data-skin='light'] .logo-tile::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--u) * 3.5);
+  right: calc(var(--u) * 3.5);
+  bottom: calc(var(--u) * 4);
+  height: calc(var(--u) * 0.9);
+  background: linear-gradient(90deg, currentColor 0 25%, transparent 25% 75%, currentColor 75%);
+}
+
+[data-skin='light'] .logo-tile.is-pressed {
+  background: var(--btn-pressed-hi);
+}
+
+/* Sliders */
+[data-skin='light'] .slider-track {
+  background: var(--track-bg);
+  border-radius: calc(var(--u) * 2);
+  box-shadow: 0 calc(var(--u) * 0.75) 0 var(--chassis-light);
+}
+
+[data-skin='light'] .slider-fill {
+  border-radius: calc(var(--u) * 2);
+}
+
+[data-skin='light'] .sl-volume .slider-fill {
+  background: linear-gradient(90deg, var(--fill-a), var(--fill-b));
+}
+
+[data-skin='light'] .slider-knob {
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 30%, var(--knob-hi) 0 35%, var(--knob-lo) 100%);
+  box-shadow: inset 0 0 0 calc(var(--u) * 0.75) var(--knob-edge), 0 calc(var(--u) * 0.75) calc(var(--u) * 0.75) rgba(40, 30, 90, 0.35);
+}
+
+[data-skin='light'] .sl-volume,
+[data-skin='light'] .sl-balance {
+  --kw: calc(var(--u) * 11);
+  --kh: calc(var(--u) * 10);
+  --th: calc(var(--u) * 3);
+}
+
+[data-skin='light'] .sl-seek {
+  --kw: calc(var(--u) * 30);
+  --kh: calc(var(--u) * 9);
+  --th: calc(var(--u) * 4.5);
+}
+
+[data-skin='light'] .sl-seek .slider-knob {
+  border-radius: calc(var(--u) * 4.5);
+  background: linear-gradient(180deg, var(--knob-hi) 0 30%, var(--knob-lo) 100%);
+}
+
+[data-skin='light'] .sl-eq {
+  --kw: calc(var(--u) * 12);
+  --kh: calc(var(--u) * 10);
+  --th: calc(var(--u) * 2.5);
+}
+
+[data-skin='light'] .sl-eq .slider-fill {
+  background: linear-gradient(0deg, var(--fill-b), var(--fill-a));
+}
+
+[data-skin='light'] .sl-eq .grip {
+  width: calc(var(--u) * 5);
+  height: calc(var(--u) * 0.9);
+  background: var(--knob-grip);
+}
+
+[data-skin='light'] .is-eq-off .sl-eq .slider-fill {
+  opacity: 0.35;
+}
+
+[data-skin='light'] .pl-thumb {
+  background: var(--pl-scroll-thumb);
+  border-radius: calc(var(--u) * 3);
+}
+
+[data-skin='light'] .pl-scrollbar {
+  border-radius: calc(var(--u) * 3.5);
+}
+
+[data-skin='light'] .popup.menu,
+[data-skin='light'] .popup.sheet {
+  border-radius: calc(var(--u) * 7);
+  background: linear-gradient(180deg, var(--chassis-hi), var(--chassis-lo));
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 0.75) var(--chassis-edge),
+    0 calc(var(--u) * 4) calc(var(--u) * 14) rgba(10, 6, 40, 0.5);
+}
+
+/* ========================== CLASSIC ========================== */
+
+[data-skin='classic'] .win {
+  border-radius: 0;
+  background: linear-gradient(180deg, var(--chassis-hi) 0%, var(--chassis-lo) 100%);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1) var(--chassis-edge),
+    inset calc(var(--u) * 2) calc(var(--u) * 2) 0 calc(var(--u) * -1) var(--chassis-light),
+    inset calc(var(--u) * -2) calc(var(--u) * -2) 0 calc(var(--u) * -1) var(--chassis-shade);
+}
+
+[data-skin='classic'] .titlebar {
+  gap: calc(var(--u) * 3);
+}
+
+[data-skin='classic'] .rail {
+  height: calc(var(--u) * 7);
+  background: repeating-linear-gradient(
+    180deg,
+    var(--rail-hi) 0 calc(var(--u) * 1),
+    var(--rail-lo) calc(var(--u) * 1) calc(var(--u) * 2)
+  );
+  box-shadow: 0 0 0 calc(var(--u) * 0.6) var(--chassis-edge);
+}
+
+[data-skin='classic'] .win:not(.is-active) .rail {
+  background: repeating-linear-gradient(
+    180deg,
+    var(--rail-inactive-hi) 0 calc(var(--u) * 1),
+    var(--rail-inactive-lo) calc(var(--u) * 1) calc(var(--u) * 2)
+  );
+}
+
+[data-skin='classic'] .title-text {
+  font-family: 'Silkscreen', monospace;
+  font-weight: 700;
+  font-size: var(--fs-title-sk);
+  color: var(--title-text);
+  letter-spacing: -0.09em;
+}
+
+[data-skin='classic'] .win:not(.is-active) .title-text {
+  color: var(--title-text-inactive);
+}
+
+[data-skin='classic'] .lcd {
+  border-radius: 0;
+  box-shadow:
+    inset calc(var(--u) * 1) calc(var(--u) * 1) 0 var(--chassis-edge),
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 var(--lcd-edge),
+    0 0 0 calc(var(--u) * 0.75) var(--chassis-shade),
+    calc(var(--u) * 0.75) calc(var(--u) * 0.75) 0 calc(var(--u) * 0.75) var(--chassis-light);
+}
+
+[data-skin='classic'] .btn-transport,
+[data-skin='classic'] .btn-toggle,
+[data-skin='classic'] .menu-btn,
+[data-skin='classic'] .sheet-close,
+[data-skin='classic'] .chip,
+[data-skin='classic'] .menu-item {
+  border-radius: 0;
+  background: linear-gradient(180deg, var(--btn-hi), var(--btn-lo));
+  box-shadow:
+    inset calc(var(--u) * 1) calc(var(--u) * 1) 0 var(--bevel-light),
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 var(--bevel-dark),
+    0 0 0 calc(var(--u) * 0.75) var(--btn-edge);
+}
+
+[data-skin='classic'] .btn.is-pressed {
+  background: linear-gradient(180deg, var(--btn-pressed-hi), var(--btn-pressed-lo));
+  box-shadow:
+    inset calc(var(--u) * 1) calc(var(--u) * 1) 0 var(--bevel-dark),
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 var(--bevel-light),
+    0 0 0 calc(var(--u) * 0.75) var(--btn-edge);
+}
+
+[data-skin='classic'] .btn.is-pressed > * {
+  transform: translate(calc(var(--u) * 0.75), calc(var(--u) * 0.75));
+}
+
+[data-skin='classic'] .menu-btn .icon,
+[data-skin='classic'] .sheet-close .icon {
+  width: calc(var(--u) * 5);
+  height: calc(var(--u) * 5);
+}
+
+[data-skin='classic'] .led {
+  width: calc(var(--u) * 2.5);
+  height: calc(var(--u) * 2.5);
+}
+
+[data-skin='classic'] .btn-toggle .btn-label {
+  color: var(--btn-icon);
+}
+
+[data-skin='classic'] .logo-tile {
+  background: var(--chassis-lo);
+  box-shadow:
+    inset calc(var(--u) * 1) calc(var(--u) * 1) 0 var(--chassis-edge),
+    inset calc(var(--u) * -1) calc(var(--u) * -1) 0 var(--chassis-light);
+  color: var(--label);
+}
+
+[data-skin='classic'] .logo-tile::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--u) * 3.5);
+  right: calc(var(--u) * 3.5);
+  bottom: calc(var(--u) * 4);
+  height: calc(var(--u) * 1);
+  background: linear-gradient(90deg, currentColor 0 25%, transparent 25% 75%, currentColor 75%);
+}
+
+[data-skin='classic'] .slider-track {
+  background: var(--track-bg);
+  box-shadow:
+    inset calc(var(--u) * 0.75) calc(var(--u) * 0.75) 0 var(--track-edge),
+    0 calc(var(--u) * 0.75) 0 var(--chassis-light);
+}
+
+[data-skin='classic'] .sl-volume .slider-fill {
+  background: linear-gradient(90deg, var(--fill-b), var(--fill-a));
+}
+
+[data-skin='classic'] .slider-knob {
+  border-radius: 0;
+  background: linear-gradient(180deg, var(--knob-hi), var(--knob-lo));
+  box-shadow:
+    inset calc(var(--u) * 0.75) calc(var(--u) * 0.75) 0 var(--bevel-light),
+    inset calc(var(--u) * -0.75) calc(var(--u) * -0.75) 0 var(--bevel-dark),
+    0 0 0 calc(var(--u) * 0.6) var(--knob-edge);
+}
+
+/* Grip lines: three vertical ticks on horizontal thumbs, three horizontal on vertical. */
+[data-skin='classic'] .slider--h .grip {
+  width: calc(var(--u) * 5);
+  height: calc(var(--u) * 5);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--knob-grip) 0 calc(var(--u) * 1),
+    transparent calc(var(--u) * 1) calc(var(--u) * 2)
+  );
+}
+
+[data-skin='classic'] .slider--v .grip {
+  width: calc(var(--u) * 6);
+  height: calc(var(--u) * 5);
+  background: repeating-linear-gradient(
+    180deg,
+    var(--knob-grip) 0 calc(var(--u) * 1),
+    transparent calc(var(--u) * 1) calc(var(--u) * 2)
+  );
+}
+
+[data-skin='classic'] .sl-volume,
+[data-skin='classic'] .sl-balance {
+  --kw: calc(var(--u) * 13);
+  --kh: calc(var(--u) * 10);
+  --th: calc(var(--u) * 5);
+}
+
+[data-skin='classic'] .sl-seek {
+  --kw: calc(var(--u) * 29);
+  --kh: calc(var(--u) * 10);
+  --th: calc(var(--u) * 6);
+}
+
+[data-skin='classic'] .sl-eq {
+  --kw: calc(var(--u) * 12);
+  --kh: calc(var(--u) * 8);
+  --th: calc(var(--u) * 4);
+}
+
+[data-skin='classic'] .sl-eq .slider-fill {
+  background: linear-gradient(0deg, var(--vis-lo), var(--vis-mid) 60%, var(--vis-hi));
+  opacity: 0.85;
+  left: calc(var(--u) * 1);
+  right: calc(var(--u) * 1);
+}
+
+[data-skin='classic'] .is-eq-off .sl-eq .slider-fill {
+  opacity: 0.25;
+}
+
+[data-skin='classic'] .pl-body,
+[data-skin='classic'] .vis-screen {
+  border-radius: 0;
+}
+
+[data-skin='classic'] .pl-thumb {
+  background: linear-gradient(180deg, var(--knob-hi), var(--knob-lo));
+  box-shadow:
+    inset calc(var(--u) * 0.75) calc(var(--u) * 0.75) 0 var(--bevel-light),
+    inset calc(var(--u) * -0.75) calc(var(--u) * -0.75) 0 var(--bevel-dark);
+}
+
+[data-skin='classic'] .popup.menu,
+[data-skin='classic'] .popup.sheet {
+  border-radius: 0;
+  background: linear-gradient(180deg, var(--chassis-hi), var(--chassis-lo));
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * 1) var(--chassis-edge),
+    inset calc(var(--u) * 2) calc(var(--u) * 2) 0 calc(var(--u) * -1) var(--chassis-light),
+    calc(var(--u) * 3) calc(var(--u) * 3) 0 rgba(0, 0, 0, 0.55);
+}
+
+[data-skin='classic'] .menu-head {
+  color: var(--rail-hi);
+}

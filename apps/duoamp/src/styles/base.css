@@ -1,0 +1,100 @@
+/* Page, stage and pane plumbing. Window artwork lives in windows.css / skins.css. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--desk, #08080d);
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  font-family: 'VT323', ui-monospace, monospace;
+  color: #fff;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  font-kerning: none;
+  font-synthesis: none;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus {
+  outline: none;
+}
+
+button:focus-visible,
+[role='slider']:focus-visible {
+  outline: calc(var(--u, 1px) * 0.75) dashed var(--led-on);
+  outline-offset: calc(var(--u, 1px) * 0.75);
+}
+
+p {
+  margin: 0;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+}
+
+.screen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  background: var(--desk);
+  contain: layout paint;
+}
+
+.pane {
+  position: absolute;
+  overflow: hidden;
+  contain: layout paint;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.icon {
+  display: block;
+  flex: none;
+  shape-rendering: crispEdges;
+}

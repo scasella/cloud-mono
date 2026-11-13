@@ -33,12 +33,19 @@ function segmentGlyph(segs: string): string[] {
 
 const DIGITS: Record<string, string[]> = {
   '-': segmentGlyph('g').map((row) => row.slice(1, DW - 1)),
-  ':': Array.from({ length: DH }, (_, r) => (r === 3 || r === 4 || r === 8 || r === 9 ? '##' : '..')),
+  // The colon has its own 6-px cell with the dots centred, so it sits midway
+  // between the minute and second pairs whatever digits surround it.
+  ':': Array.from({ length: DH }, (_, r) => (r === 3 || r === 4 || r === 8 || r === 9 ? '..##..' : '......')),
   ' ': Array.from({ length: DH }, () => '.'.repeat(DW)),
 };
 DIGIT_SEGS.forEach((segs, i) => (DIGITS[String(i)] = segmentGlyph(segs)));
-// Give the "1" a small flag so it reads as a one rather than a bare bar.
-DIGITS['1'] = DIGITS['1'].map((row, r) => (r === 1 || r === 2 ? '.....##' + row.slice(7) : row));
+// The "1" is a centred 2-px stroke with a small flag: a right-aligned segment
+// "1" leaves pairs like 01 / 10 and the colon looking lopsided.
+DIGITS['1'] = Array.from({ length: DH }, (_, r) => {
+  if (r === 0) return '....##...';
+  if (r === 1 || r === 2) return '..####...';
+  return '....##...';
+});
 export const DIGIT_H = DH;
 
 // 5×7 play-state glyphs.

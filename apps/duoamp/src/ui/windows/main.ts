@@ -13,6 +13,8 @@ import { pixelText } from '../pixelText';
 const LCD = { x: 8, y: 18, w: 94, h: 44 };
 const DIGIT_P = 1.25;
 const MARQUEE_SPEED_U = 16; // units per second
+/** Each track's text starts with its number at the left edge and holds this long. */
+const MARQUEE_HOLD_MS = 2000;
 
 export class MainWindow implements WinComponent {
   readonly el: HTMLElement;
@@ -38,6 +40,10 @@ export class MainWindow implements WinComponent {
   private repBtn: SkinButton;
   private u = 1;
   private state: PlayerState;
+  /** Marquee holds at the start of each track (ms timestamp). */
+  private holdUntil = 0;
+  /** Test hook: show this many seconds on the LCD instead of the live position. */
+  lcdOverride: number | null = null;
 
   constructor(private ctx: AppContext) {
     const { engine } = ctx;
@@ -62,18 +68,21 @@ export class MainWindow implements WinComponent {
     this.marquee = place(h('div', 'lcd marquee', [this.marqueeText]), 108, 18, 160, 12);
     this.el.append(this.marquee);
 
-    this.kbps = place(h('div', 'lcd readout', '256'), 108, 34, 21, 10);
-    this.khz = place(h('div', 'lcd readout', '44'), 153, 34, 15, 10);
-    this.mono = place(h('span', 'lbl ind', 'MONO'), 205, 35.5, 24, 8);
-    this.stereo = place(h('span', 'lbl ind', 'STEREO'), 230, 35.5, 38, 8);
-    this.el.append(
+    // Readout row as a flex strip with real gaps, so it survives small text-size differences.
+    this.kbps = h('div', 'lcd readout readout-kbps', '256');
+    this.khz = h('div', 'lcd readout readout-khz', '44');
+    this.mono = h('span', 'lbl ind', 'MONO');
+    this.stereo = h('span', 'lbl ind', 'STEREO');
+    const infoRow = place(h('div', 'info-row', [
       this.kbps,
-      place(h('span', 'lbl', 'KBPS'), 131, 35.5, 22, 8),
+      h('span', 'lbl', 'KBPS'),
       this.khz,
-      place(h('span', 'lbl', 'KHZ'), 170, 35.5, 20, 8),
+      h('span', 'lbl', 'KHZ'),
+      h('span', 'info-spacer'),
       this.mono,
       this.stereo,
-    );
+    ]), 108, 34, 160, 10);
+    this.el.append(infoRow);
 
     this.vol = new Slider({
       orientation: 'h',
@@ -219,6 +228,8 @@ export class MainWindow implements WinComponent {
       const t = s.tracks[s.index];
       this.marqueeStr = pixelText(t ? `${s.index + 1}. ${t.artist} - ${t.title} (${fmtTime(t.duration)})  ***  ` : `${windowTitle()}  ***  `);
       this.marqueeOffset = 0;
+      this.holdUntil = performance.now() + MARQUEE_HOLD_MS;
+      this.marqueeText.style.transform = '';
       this.kbps.textContent = String(t?.kbps ?? 256);
       this.khz.textContent = String(t?.khz ?? 44);
       const stereo = (t?.channels ?? 2) === 2;
@@ -266,7 +277,7 @@ export class MainWindow implements WinComponent {
     if (!this.seek.dragging) this.seek.set(s.duration > 0 ? pos / s.duration : 0);
 
     // Marquee: scroll in whole device pixels for the stepped retro look.
-    if (!this.msg && !this.ctx.reducedMotion && this.marqueeW > 0) {
+    if (!this.msg && !this.ctx.reducedMotion && this.marqueeW > 0 && now >= this.holdUntil) {
       this.marqueeOffset = (this.marqueeOffset + MARQUEE_SPEED_U * this.u * dt) % this.marqueeW;
       const dpr = window.devicePixelRatio || 1;
       const stepPx = Math.max(1, Math.round(this.u * dpr)) / dpr;
@@ -282,11 +293,11 @@ export class MainWindow implements WinComponent {
     const glyph = s.status === 'playing' ? GLYPHS.play : s.status === 'paused' ? GLYPHS.pause : GLYPHS.stop;
     c.map(glyph, 5, 5, 1);
     const remaining = prefs.timeMode === 'remaining';
-    const shown = remaining ? Math.max(0, s.duration - pos) : pos;
+    const shown = this.lcdOverride ?? (remaining ? Math.max(0, s.duration - pos) : pos);
     const total = Math.floor(shown);
     const mm = Math.min(99, Math.floor(total / 60));
     const txt = `${String(mm).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-    const blinkOff = s.status === 'paused' && !this.ctx.reducedMotion && Math.floor(now / 500) % 2 === 1;
+    const blinkOff = this.lcdOverride === null && s.status === 'paused' && !this.ctx.reducedMotion && Math.floor(now / 500) % 2 === 1;
     const dw = digitsWidth(txt) * DIGIT_P;
     const dx = LCD.w - 5 - dw;
     c.ctx.fillStyle = tk.lcdDigit;

@@ -55,30 +55,44 @@ export function compose(p: Posture, eqOn: boolean, plOn: boolean, w: Record<'mai
   return [[main, eqOn ? eqStrip : dock], [visFill]];
 }
 
-function snapFp(px: number, dpr: number) {
-  return Math.max(1, Math.round(px * dpr)) / dpr;
+/** Max relative change accepted when snapping a font pixel to whole device pixels. */
+const SNAP_TOLERANCE = 0.06;
+
+/**
+ * Snap a font pixel to whole device pixels when that changes its size by no
+ * more than SNAP_TOLERANCE; otherwise keep the exact size (slightly soft
+ * edges beat text that no longer fits). When 1u is itself a whole number of
+ * device pixels (the simulator picks such a zoom when it can) the grid is
+ * pixel-perfect and snapping is always applied.
+ */
+function snapFp(px: number, dpr: number, snapAlways: boolean) {
+  const snapped = Math.max(1, Math.round(px * dpr)) / dpr;
+  return snapAlways || Math.abs(snapped - px) / px <= SNAP_TOLERANCE ? snapped : px;
 }
 
 /** Font sizes snapped so pixel-font pixels land on whole device pixels. */
 function typeVars(pane: HTMLElement, u: number) {
   const dpr = window.devicePixelRatio || 1;
   const s = pane.style;
+  const exactGrid = Math.abs(u * dpr - Math.round(u * dpr)) < 0.02;
+  pane.dataset.pixelGrid = exactGrid ? 'exact' : 'fractional';
   s.setProperty('--u', `${u}px`);
   // Silkscreen: 8 font-pixels per em.
-  s.setProperty('--fs-label', `${8 * snapFp(0.8 * u, dpr)}px`);
-  s.setProperty('--fs-title-sk', `${8 * snapFp(0.95 * u, dpr)}px`);
+  s.setProperty('--fs-label', `${8 * snapFp(0.8 * u, dpr, exactGrid)}px`);
+  s.setProperty('--fs-title-sk', `${8 * snapFp(0.95 * u, dpr, exactGrid)}px`);
   // DuoPixel: 8 font pixels per em; each font pixel snapped to whole device pixels.
   // --fp-* is the font pixel itself, so tracking can be a whole number of font pixels too.
   const dp = (name: string, k: number) => {
-    const fp = snapFp(k * u, dpr);
+    const fp = snapFp(k * u, dpr, exactGrid);
     s.setProperty(`--fp-${name}`, `${fp}px`);
     s.setProperty(`--fs-${name}`, `${8 * fp}px`);
   };
-  dp('title', 0.9);
-  dp('marquee', 1.1);
+  // Multipliers chosen so the researched pane widths land within the snap tolerance at 3x.
+  dp('title', 0.95);
+  dp('marquee', 1.2);
   dp('readout', 1);
   dp('pl', 1);
-  dp('info', 0.9);
+  dp('info', 0.95);
   dp('menu', 1);
   dp('logo', 1.75);
 }
@@ -307,6 +321,11 @@ export class App {
         handled = false;
     }
     if (handled) e.preventDefault();
+  }
+
+  /** Test hook access to the main window (screenshots of the LCD states). */
+  get main() {
+    return this.mainWin;
   }
 
   get currentPlan() {

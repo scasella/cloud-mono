@@ -54,7 +54,7 @@ export const DEVICE = {
    * Extra inset (CSS px) applied to pane edges that touch the display edge
    * where the system safe area is 0, so controls clear the rounded corners.
    */
-  cornerInset: { x: 6, y: 5 },
+  cornerInset: { x: 0, y: 0 },
   /** Bezel thickness drawn around the display in the simulator. */
   bezel: 14,
 } as const;

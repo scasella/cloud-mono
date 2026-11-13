@@ -49,6 +49,9 @@
   flex: none;
   white-space: nowrap;
   line-height: 1;
+  /* Real breathing room from the rails, independent of the exact text width. */
+  padding-left: calc(var(--u) * 1.5);
+  padding-right: calc(var(--u) * 1.5);
 }
 
 /* ---- LCD surfaces ------------------------------------------------------ */
@@ -85,7 +88,39 @@
   will-change: transform;
 }
 
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+}
+
+.win .info-row > * {
+  position: relative;
+  flex: none;
+}
+
+.info-row .lbl {
+  line-height: calc(var(--u) * 10);
+  padding-top: calc(var(--u) * 0.5);
+}
+
+.info-row .lbl + .readout {
+  margin-left: calc(var(--u) * 3);
+}
+
+.info-spacer {
+  flex: 1 1 auto;
+  min-width: calc(var(--u) * 3);
+}
+
+.info-row .ind + .ind {
+  margin-left: calc(var(--u) * 1);
+}
+
 .readout {
+  height: calc(var(--u) * 10);
+  min-width: calc(var(--u) * 14);
+  padding: 0 calc(var(--u) * 1.5);
   font-family: 'DuoPixel', monospace;
   font-size: var(--fs-readout);
   line-height: calc(var(--u) * 10);
@@ -286,11 +321,11 @@
 
 .pl-row {
   display: flex;
-  height: calc(var(--u) * 8);
+  height: calc(var(--u) * 9);
   padding: 0 calc(var(--u) * 2);
   font-family: 'DuoPixel', monospace;
   font-size: var(--fs-pl);
-  line-height: calc(var(--u) * 8);
+  line-height: calc(var(--u) * 9);
   color: var(--pl-text);
   white-space: nowrap;
 }

@@ -64,7 +64,7 @@ try {
     const fs = parseFloat(getComputedStyle(name).fontSize);
     return { rows: sc.clientHeight / row.offsetHeight, chars: Math.floor(name.getBoundingClientRect().width / (fs * 0.75)) };
   });
-  ok(density.rows >= 18 && density.rows <= 22, `cover playlist shows ~19 rows (${density.rows.toFixed(1)})`);
+  ok(density.rows >= 17 && density.rows <= 20.5, `cover playlist shows ~19 rows (${density.rows.toFixed(1)})`);
   ok(density.chars >= 33 && density.chars <= 38, `row fits ~33+ characters before ".." (${density.chars})`);
   ok(await page.evaluate(() => document.fonts.check("12px 'DuoPixel'", 'A')), 'DuoPixel font loaded');
   {
@@ -254,10 +254,17 @@ try {
   ok(t1 === t2 && !t1, `reduced motion: marquee static ("${t2}")`);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await page.reload();
-  await page.evaluate(() => window.duoamp.engine.play());
-  await page.waitForTimeout(500);
+  await page.evaluate(() => window.duoamp.engine.playIndex(30));
+  await page.waitForTimeout(800);
+  const held = await page.evaluate(() => {
+    const m = document.querySelector('.marquee');
+    const t = document.querySelector('.marquee-text');
+    return { tf: t.style.transform, left: t.getBoundingClientRect().left - m.getBoundingClientRect().left, text: t.textContent.slice(0, 4) };
+  });
+  ok(!held.tf && held.text === '31. ' && held.left >= 0, `marquee holds at track start with "31. " at the left edge (${JSON.stringify(held)})`);
+  await page.waitForTimeout(1800);
   const t3 = await page.evaluate(() => document.querySelector('.marquee-text').style.transform);
-  ok(/translate3d\(-\d/.test(t3), `marquee scrolls normally ("${t3}")`);
+  ok(/translate3d\(-\d/.test(t3), `marquee scrolls after the hold ("${t3}")`);
 
   ok(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {

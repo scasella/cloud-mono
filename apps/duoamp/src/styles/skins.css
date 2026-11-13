@@ -203,6 +203,11 @@
   gap: calc(var(--u) * 3);
 }
 
+[data-skin='classic'] .title-text {
+  padding-left: calc(var(--u) * 2);
+  padding-right: calc(var(--u) * 2);
+}
+
 [data-skin='classic'] .rail {
   height: calc(var(--u) * 7);
   background: repeating-linear-gradient(

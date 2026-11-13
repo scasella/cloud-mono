@@ -1,4 +1,4 @@
-import { DETECT, DEVICE, type Insets, type LayoutPref, type Posture } from './config';
+import { DETECT, DEVICE, GRID, type Insets, type LayoutPref, type Posture } from './config';
 
 /**
  * Resolves which layout to use (cover | book | tabletop), whether to draw the
@@ -130,6 +130,32 @@ export interface PlanInput {
   simChrome: { w: number; h: number };
 }
 
+/** Largest zoom the simulator may use, and how far below best fit it may go for crisp pixels. */
+const SIM_MAX_ZOOM = 1.25;
+const SIM_MIN_FRACTION = 0.78;
+
+/**
+ * Pick a simulator zoom at which 1 grid unit in the first pane (the one with
+ * Main) is a whole number of device pixels, so the artwork is pixel-perfect
+ * on ordinary monitors. Falls back to the best-fit zoom when no such zoom is
+ * within SIM_MIN_FRACTION of it.
+ */
+export function pixelPerfectZoom(posture: Posture, fit: number): number {
+  const target = Math.max(0.35, Math.min(SIM_MAX_ZOOM, fit));
+  const spec = DEVICE[posture];
+  const corner = DEVICE.cornerInset;
+  const w1 = computePanes(posture, spec.width, spec.height, spec.insets, DEVICE.foldGutter, null, corner).panes[0].w;
+  const dpr = window.devicePixelRatio || 1;
+  const perK = GRID.width / (w1 * dpr); // zoom needed per device pixel per unit
+  let best: number | null = null;
+  for (let k = Math.max(1, Math.floor(target / perK)); k <= Math.ceil(target / perK) + 1; k++) {
+    const z = k * perK;
+    if (z > Math.min(fit, SIM_MAX_ZOOM) || z < target * SIM_MIN_FRACTION) continue;
+    if (best === null || Math.abs(z - target) < Math.abs(best - target)) best = z;
+  }
+  return best ?? target;
+}
+
 export function planLayout(input: PlanInput): LayoutPlan & { zoom: number } {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
@@ -142,7 +168,7 @@ export function planLayout(input: PlanInput): LayoutPlan & { zoom: number } {
     const spec = DEVICE[posture];
     const bez = DEVICE.bezel * 2;
     const fit = Math.min((vw - input.simChrome.w) / (spec.width + bez), (vh - input.simChrome.h) / (spec.height + bez));
-    const zoom = input.zoomOverride ?? Math.max(0.35, Math.min(1, fit));
+    const zoom = input.zoomOverride ?? pixelPerfectZoom(posture, fit);
     const W = spec.width * zoom;
     const H = spec.height * zoom;
     const insets: Insets = {

@@ -71,14 +71,15 @@ async function main() {
       page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
       await page.goto(`${server.url}?test=1&${query}`);
       await page.evaluate(() => document.fonts.ready);
-      // Play from a fixed point so the LCD/visualiser have something to show.
+      // Start track 31 fresh at 1:10 so the LCD and visualiser have something to show
+      // and the marquee is in its initial hold (number prefix at the left edge).
       await page.evaluate(() => {
         const { engine } = window.duoamp;
-        engine.play();
+        engine.playIndex(30);
         engine.seek(70);
       });
       if (prep) await prep(page);
-      await page.waitForTimeout(1400);
+      await page.waitForTimeout(950);
       const file = join(outDir, `${name}.png`);
       await page.screenshot({ path: file });
       shots.push(file);
@@ -93,6 +94,32 @@ async function main() {
         await capture(`sim-${p}-${skin}`, { width: 1280, height: 1000 }, 2, `sim=1&layout=${p}&skin=${skin}`);
       }
     }
+    // Low-density rendering stays visible in review.
+    await capture('dpr1-sim-book-classic', { width: 1280, height: 1000 }, 1, 'sim=1&layout=book&skin=classic');
+    await capture('dpr1-sim-cover-light', { width: 1280, height: 900 }, 1, 'sim=1&layout=cover&skin=light');
+    await capture('dpr1-bleed-cover-light', { width: 382, height: 600 }, 1, 'sim=0&skin=light');
+
+    // LCD time readouts: 00:00, 01:11, 10:10 and remaining -03:59, both skins.
+    for (const skin of SKINS) {
+      if (only && !`digits-${skin}`.includes(only)) continue;
+      const ctx = await browser.newContext({ viewport: { width: 382, height: 600 }, deviceScaleFactor: 3 });
+      const page = await ctx.newPage();
+      page.on('pageerror', (e) => errors.push(`digits: ${e.message}`));
+      await page.goto(`${server.url}?test=1&sim=0&skin=${skin}`);
+      await page.evaluate(() => document.fonts.ready);
+      for (const [name, sec, mode] of [['0000', 0, 'elapsed'], ['0111', 71, 'elapsed'], ['1010', 610, 'elapsed'], ['m0359', 239, 'remaining']]) {
+        await page.evaluate(([s, m]) => {
+          window.duoamp.prefs.timeMode = m;
+          window.duoamp.app.main.lcdOverride = s;
+        }, [sec, mode]);
+        await page.waitForTimeout(120);
+        const file = join(outDir, `digits-${skin}-${name}.png`);
+        await page.locator('.lcd-main').screenshot({ path: file });
+        shots.push(file);
+      }
+      await ctx.close();
+    }
+
     // A few states worth reviewing.
     await capture('state-cover-noeq-light', { width: 382, height: 600 }, 3, 'sim=0&skin=light', async (p) => {
       await p.click('.btn-eq');

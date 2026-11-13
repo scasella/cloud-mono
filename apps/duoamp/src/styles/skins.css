@@ -22,20 +22,14 @@
   box-shadow: 0 calc(var(--u) * 0.75) 0 var(--rail-hi);
 }
 
-[data-skin='light'] .win:not(.is-active) .rail {
-  background: var(--rail-inactive-lo);
-}
-
 [data-skin='light'] .title-text {
-  font-family: 'VT323', monospace;
-  font-size: var(--fs-title-vt);
+  font-family: 'DuoPixel', monospace;
+  font-size: var(--fs-title);
   color: var(--title-text);
-  letter-spacing: calc(var(--u) * 0.4);
-  padding-top: calc(var(--u) * 1);
-}
-
-[data-skin='light'] .win:not(.is-active) .title-text {
-  color: var(--title-text-inactive);
+  /* Generous tracking, a whole number of font pixels so glyphs stay on the pixel grid. */
+  letter-spacing: var(--fp-title);
+  margin-right: calc(var(--fp-title) * -1);
+  padding-top: var(--fp-title);
 }
 
 [data-skin='light'] .lcd {
@@ -109,18 +103,8 @@
 
 [data-skin='light'] .logo-tile {
   border-radius: calc(var(--u) * 3);
+  background: linear-gradient(180deg, var(--chassis-lo), var(--chassis-hi));
   box-shadow: inset 0 0 0 calc(var(--u) * 0.75) var(--btn-edge), 0 calc(var(--u) * 0.75) 0 var(--chassis-light);
-  color: var(--label);
-}
-
-[data-skin='light'] .logo-tile::before {
-  content: '';
-  position: absolute;
-  left: calc(var(--u) * 3.5);
-  right: calc(var(--u) * 3.5);
-  bottom: calc(var(--u) * 4);
-  height: calc(var(--u) * 0.9);
-  background: linear-gradient(90deg, currentColor 0 25%, transparent 25% 75%, currentColor 75%);
 }
 
 [data-skin='light'] .logo-tile.is-pressed {
@@ -229,24 +213,13 @@
   box-shadow: 0 0 0 calc(var(--u) * 0.6) var(--chassis-edge);
 }
 
-[data-skin='classic'] .win:not(.is-active) .rail {
-  background: repeating-linear-gradient(
-    180deg,
-    var(--rail-inactive-hi) 0 calc(var(--u) * 1),
-    var(--rail-inactive-lo) calc(var(--u) * 1) calc(var(--u) * 2)
-  );
-}
-
 [data-skin='classic'] .title-text {
-  font-family: 'Silkscreen', monospace;
-  font-weight: 700;
-  font-size: var(--fs-title-sk);
+  font-family: 'DuoPixel', monospace;
+  font-size: var(--fs-title);
   color: var(--title-text);
-  letter-spacing: -0.09em;
-}
-
-[data-skin='classic'] .win:not(.is-active) .title-text {
-  color: var(--title-text-inactive);
+  letter-spacing: var(--fp-title);
+  margin-right: calc(var(--fp-title) * -1);
+  padding-top: var(--fp-title);
 }
 
 [data-skin='classic'] .lcd {
@@ -300,21 +273,10 @@
 }
 
 [data-skin='classic'] .logo-tile {
-  background: var(--chassis-lo);
+  background: #1d1d36;
   box-shadow:
     inset calc(var(--u) * 1) calc(var(--u) * 1) 0 var(--chassis-edge),
     inset calc(var(--u) * -1) calc(var(--u) * -1) 0 var(--chassis-light);
-  color: var(--label);
-}
-
-[data-skin='classic'] .logo-tile::before {
-  content: '';
-  position: absolute;
-  left: calc(var(--u) * 3.5);
-  right: calc(var(--u) * 3.5);
-  bottom: calc(var(--u) * 4);
-  height: calc(var(--u) * 1);
-  background: linear-gradient(90deg, currentColor 0 25%, transparent 25% 75%, currentColor 75%);
 }
 
 [data-skin='classic'] .slider-track {

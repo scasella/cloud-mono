@@ -69,7 +69,7 @@ async function main() {
       const page = await ctx.newPage();
       page.on('console', (m) => m.type() === 'error' && errors.push(`${name}: ${m.text()}`));
       page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
-      await page.goto(`${server.url}?${query}`);
+      await page.goto(`${server.url}?test=1&${query}`);
       await page.evaluate(() => document.fonts.ready);
       // Play from a fixed point so the LCD/visualiser have something to show.
       await page.evaluate(() => {

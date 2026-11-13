@@ -145,7 +145,7 @@ export class Overlays {
         h('div', 'sheet-big', `${APP_NAME} ${APP_VERSION}`),
         h('p', '', 'A RETRO DECK FOR ONE, TWO OR FOLDED SCREENS.'),
         h('p', '', 'ALL ARTWORK IS DRAWN IN CODE.'),
-        h('p', '', 'FONTS: SILKSCREEN BY JASON KOTTKE, VT323 BY PETER HULL. SIL OPEN FONT LICENSE 1.1.'),
+        h('p', '', 'TEXT FACE: DUOPIXEL, DRAWN FOR THIS PROJECT. LABELS: SILKSCREEN BY JASON KOTTKE (SIL OPEN FONT LICENSE 1.1).'),
         h('p', 'dim', 'KEYS: Z X C V B = PREV PLAY PAUSE STOP NEXT. SPACE PAUSE. ARROWS VOLUME / SEEK. S SHUFFLE, R REPEAT.'),
       );
     }

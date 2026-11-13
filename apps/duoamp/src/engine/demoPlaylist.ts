@@ -139,6 +139,8 @@ export function buildDemoPlaylist(): Track[] {
       channels: rand() < 0.05 ? 1 : 2,
     });
   }
+  // One row exercises the font fallbacks: accents fold to capitals, other scripts become '?'.
+  tracks[99] = { ...tracks[99], artist: 'Kåre & Nørdlys', title: 'Sakura サクラ (Café Mix)' };
   return tracks;
 }
 

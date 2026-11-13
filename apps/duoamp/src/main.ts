@@ -1,6 +1,5 @@
 import '@fontsource/silkscreen/latin-400.css';
 import '@fontsource/silkscreen/latin-700.css';
-import '@fontsource/vt323/latin-400.css';
 import './styles/base.css';
 import './styles/windows.css';
 import './styles/skins.css';
@@ -29,5 +28,5 @@ const engine: PlayerEngine = new MockEngine({
 const app = new App(document.getElementById('app')!, engine, prefs, url);
 if (url.autoplay) engine.play();
 
-// Handy for manual poking and for the Playwright checks.
-(window as unknown as { duoamp: unknown }).duoamp = { engine, app, prefs };
+// Test hook for the Playwright scripts and manual poking: dev server, or ?test=1.
+if (import.meta.env.DEV || url.test) (window as unknown as { duoamp: unknown }).duoamp = { engine, app, prefs };

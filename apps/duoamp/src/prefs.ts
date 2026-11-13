@@ -111,6 +111,8 @@ export interface UrlOverrides {
   /** Mock playback rate (testing). */
   rate?: number;
   autoplay?: boolean;
+  /** Expose window.duoamp for automated checks. */
+  test?: boolean;
 }
 
 export function readUrlOverrides(): UrlOverrides {
@@ -128,5 +130,6 @@ export function readUrlOverrides(): UrlOverrides {
   const rate = Number(q.get('rate'));
   if (rate > 0 && rate < 100) o.rate = rate;
   if (q.get('autoplay') === '1') o.autoplay = true;
+  if (q.get('test') === '1') o.test = true;
   return o;
 }

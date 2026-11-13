@@ -5,8 +5,11 @@ import { titleBar, windowTitle } from '../context';
 import { fmtTime, h } from '../dom';
 import { SkinButton } from '../controls';
 
-/** Monospace advance of VT323 as a fraction of the font size. */
-const VT_ADVANCE = 0.4;
+import { DUOPIXEL_ADVANCE, DUOPIXEL_PX_PER_EM } from '../../fonts/duopixel-charset';
+import { pixelText } from '../pixelText';
+
+/** Monospace advance of DuoPixel as a fraction of the font size. */
+const ADVANCE_EM = DUOPIXEL_ADVANCE / DUOPIXEL_PX_PER_EM;
 
 export class PlaylistWindow implements WinComponent {
   readonly el: HTMLElement;
@@ -76,13 +79,13 @@ export class PlaylistWindow implements WinComponent {
       this.rowsEl.append(row);
     });
     const total = s.tracks.reduce((a, t) => a + t.duration, 0);
-    this.info1.textContent = s.sourceLabel;
+    this.info1.textContent = pixelText(s.sourceLabel);
     this.info2.textContent = `${s.tracks.length} TRACKS ${fmtTime(total)}`;
     this.charsFit = 0;
     this.truncate();
   }
 
-  /** Classic ".." truncation; VT323 is monospaced so this is exact. */
+  /** Classic ".." truncation; DuoPixel is monospaced so this is exact. */
   private truncate() {
     const row = this.rows[0];
     if (!row) return;
@@ -90,11 +93,11 @@ export class PlaylistWindow implements WinComponent {
     const fs = parseFloat(getComputedStyle(name).fontSize) || 12;
     const ls = parseFloat(getComputedStyle(name).letterSpacing) || 0;
     const avail = name.getBoundingClientRect().width;
-    const chars = Math.max(4, Math.floor((avail + ls) / (fs * VT_ADVANCE + ls)));
+    const chars = Math.max(4, Math.floor((avail + ls) / (fs * ADVANCE_EM + ls)));
     if (chars === this.charsFit) return;
     this.charsFit = chars;
     this.state.tracks.forEach((t, i) => {
-      const full = `${i + 1}. ${t.artist} - ${t.title}`;
+      const full = pixelText(`${i + 1}. ${t.artist} - ${t.title}`);
       this.names[i].textContent = full.length <= chars ? full : full.slice(0, chars - 2) + '..';
     });
   }

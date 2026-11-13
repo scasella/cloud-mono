@@ -8,9 +8,10 @@ import { SkinButton, Slider, pressable } from '../controls';
 import { ICONS } from '../icons';
 import { GLYPHS, PixelCanvas, digitsWidth } from '../pixels';
 import { Bars } from '../bars';
+import { pixelText } from '../pixelText';
 
 const LCD = { x: 8, y: 18, w: 94, h: 44 };
-const DIGIT_P = 1.5;
+const DIGIT_P = 1.25;
 const MARQUEE_SPEED_U = 16; // units per second
 
 export class MainWindow implements WinComponent {
@@ -58,18 +59,18 @@ export class MainWindow implements WinComponent {
     this.el.append(lcdBox);
 
     this.marqueeText = h('span', 'marquee-text');
-    this.marquee = place(h('div', 'lcd marquee', [this.marqueeText]), 108, 18, 160, 13);
+    this.marquee = place(h('div', 'lcd marquee', [this.marqueeText]), 108, 18, 160, 12);
     this.el.append(this.marquee);
 
-    this.kbps = place(h('div', 'lcd readout', '256'), 108, 34, 17, 10);
-    this.khz = place(h('div', 'lcd readout', '44'), 150, 34, 12, 10);
-    this.mono = place(h('span', 'lbl ind', 'MONO'), 204, 35.5, 24, 8);
+    this.kbps = place(h('div', 'lcd readout', '256'), 108, 34, 21, 10);
+    this.khz = place(h('div', 'lcd readout', '44'), 153, 34, 15, 10);
+    this.mono = place(h('span', 'lbl ind', 'MONO'), 205, 35.5, 24, 8);
     this.stereo = place(h('span', 'lbl ind', 'STEREO'), 230, 35.5, 38, 8);
     this.el.append(
       this.kbps,
-      place(h('span', 'lbl', 'KBPS'), 127, 35.5, 22, 8),
+      place(h('span', 'lbl', 'KBPS'), 131, 35.5, 22, 8),
       this.khz,
-      place(h('span', 'lbl', 'KHZ'), 164, 35.5, 20, 8),
+      place(h('span', 'lbl', 'KHZ'), 170, 35.5, 20, 8),
       this.mono,
       this.stereo,
     );
@@ -142,12 +143,12 @@ export class MainWindow implements WinComponent {
         }
       },
     });
-    place(this.seek.el, 8, 65, 260, 11);
+    place(this.seek.el, 8, 70, 260, 11);
     this.el.append(this.seek.el);
 
     const tb = (cls: string, icon: string, aria: string, x: number, fn: () => void) => {
       const b = new SkinButton({ cls: `btn-transport ${cls}`, icon, aria, onPress: fn });
-      place(b.el, x, 82, 22, 21);
+      place(b.el, x, 88, 22, 21);
       this.el.append(b.el);
       return b;
     };
@@ -168,7 +169,7 @@ export class MainWindow implements WinComponent {
         ctx.message(on ? 'SHUFFLE: ON' : 'SHUFFLE: OFF', 900);
       },
     });
-    place(this.shuffleBtn.el, 156, 85.5, 44, 14);
+    place(this.shuffleBtn.el, 156, 91.5, 44, 14);
     this.repBtn = new SkinButton({
       cls: 'btn-toggle btn-rep', label: 'REP', led: true, aria: 'Repeat',
       onPress: () => {
@@ -179,10 +180,10 @@ export class MainWindow implements WinComponent {
         ctx.message(on ? 'REPEAT: ON' : 'REPEAT: OFF', 900);
       },
     });
-    place(this.repBtn.el, 203, 85.5, 28, 14);
-    const logo = h('button', 'btn logo-tile', [h('span', 'logo-d', 'D')], { type: 'button', 'aria-label': 'About' });
+    place(this.repBtn.el, 203, 91.5, 28, 14);
+    const logo = h('button', 'btn logo-tile', [h('span', 'logo-us'), h('span', 'logo-d', 'D'), h('span', 'logo-us')], { type: 'button', 'aria-label': 'About' });
     pressable(logo, () => ctx.openSheet('about', logo));
-    place(logo, 244, 82, 24, 21);
+    place(logo, 243, 88, 25, 21);
     this.el.append(this.shuffleBtn.el, this.repBtn.el, logo);
 
     engine.subscribe((s, kinds) => this.onState(s, kinds));
@@ -216,7 +217,7 @@ export class MainWindow implements WinComponent {
     this.state = s;
     if (kinds.has('track') || kinds.has('tracks')) {
       const t = s.tracks[s.index];
-      this.marqueeStr = t ? `${s.index + 1}. ${t.artist} - ${t.title} (${fmtTime(t.duration)})  ***  ` : `${windowTitle()}  ***  `;
+      this.marqueeStr = pixelText(t ? `${s.index + 1}. ${t.artist} - ${t.title} (${fmtTime(t.duration)})  ***  ` : `${windowTitle()}  ***  `);
       this.marqueeOffset = 0;
       this.kbps.textContent = String(t?.kbps ?? 256);
       this.khz.textContent = String(t?.khz ?? 44);
@@ -242,7 +243,7 @@ export class MainWindow implements WinComponent {
   private renderMarquee() {
     if (this.msg) {
       this.marquee.classList.add('is-message');
-      this.marqueeText.textContent = this.msg;
+      this.marqueeText.textContent = pixelText(this.msg);
       this.marqueeText.style.transform = '';
       return;
     }
@@ -288,18 +289,14 @@ export class MainWindow implements WinComponent {
     const blinkOff = s.status === 'paused' && !this.ctx.reducedMotion && Math.floor(now / 500) % 2 === 1;
     const dw = digitsWidth(txt) * DIGIT_P;
     const dx = LCD.w - 5 - dw;
-    if (prefs.skin === 'light') {
-      c.ctx.shadowColor = tk.lcdGlow;
-      c.ctx.shadowBlur = c.k * 1.2;
-    }
+    c.ctx.fillStyle = tk.lcdDigit;
     if (!blinkOff) {
       c.digits(txt, dx, 4, DIGIT_P);
-      if (remaining) c.digits('-', dx - 7 * DIGIT_P, 4, DIGIT_P);
+      if (remaining) c.digits('-', dx - 9 * DIGIT_P, 4, DIGIT_P);
     }
-    c.ctx.shadowBlur = 0;
 
     // Mini spectrum
-    const sy = 25;
+    const sy = 24;
     const sh = LCD.h - sy - 4;
     this.bars.update(this.ctx, dt);
     const grad = c.ctx.createLinearGradient(0, (sy + sh) * c.k, 0, sy * c.k);

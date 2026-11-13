@@ -20,7 +20,7 @@ export const GRID = {
   playlistMin: 64,
   visMin: 26,
   /** Gap between stacked windows (in u, per skin shape via CSS too). */
-  windowGap: 1,
+  windowGap: 0.5,
 } as const;
 
 export type Posture = 'cover' | 'book' | 'tabletop';
@@ -50,6 +50,11 @@ export const DEVICE = {
    * Viewport Segments API is not available. Controls never sit in it.
    */
   foldGutter: 10,
+  /**
+   * Extra inset (CSS px) applied to pane edges that touch the display edge
+   * where the system safe area is 0, so controls clear the rounded corners.
+   */
+  cornerInset: { x: 6, y: 5 },
   /** Bezel thickness drawn around the display in the simulator. */
   bezel: 14,
 } as const;

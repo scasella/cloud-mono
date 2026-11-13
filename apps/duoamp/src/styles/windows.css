@@ -74,9 +74,9 @@
 
 .marquee {
   white-space: nowrap;
-  font-family: 'VT323', monospace;
+  font-family: 'DuoPixel', monospace;
   font-size: var(--fs-marquee);
-  line-height: calc(var(--u) * 13);
+  line-height: calc(var(--u) * 12);
   padding-left: calc(var(--u) * 2);
 }
 
@@ -86,7 +86,7 @@
 }
 
 .readout {
-  font-family: 'VT323', monospace;
+  font-family: 'DuoPixel', monospace;
   font-size: var(--fs-readout);
   line-height: calc(var(--u) * 10);
   text-align: center;
@@ -148,14 +148,24 @@
 }
 
 .logo-tile {
-  font-family: 'Silkscreen', monospace;
+  gap: var(--fp-logo);
+  color: var(--logo);
 }
 
+/* "_D_": a large D with short underscore marks on the baseline either side. */
 .logo-d {
-  font-family: 'Silkscreen', monospace;
-  font-weight: 700;
-  font-size: var(--fs-title-sk);
+  font-family: 'DuoPixel', monospace;
+  font-size: var(--fs-logo);
   line-height: 1;
+  height: var(--fs-logo);
+}
+
+.logo-us {
+  flex: none;
+  width: calc(var(--fp-logo) * 2.5);
+  height: calc(var(--fp-logo) * 0.75);
+  background: currentColor;
+  transform: translateY(calc(var(--fp-logo) * 3.6));
 }
 
 /* ---- sliders ----------------------------------------------------------- */
@@ -276,11 +286,11 @@
 
 .pl-row {
   display: flex;
-  height: calc(var(--u) * 10);
+  height: calc(var(--u) * 8);
   padding: 0 calc(var(--u) * 2);
-  font-family: 'VT323', monospace;
+  font-family: 'DuoPixel', monospace;
   font-size: var(--fs-pl);
-  line-height: calc(var(--u) * 10);
+  line-height: calc(var(--u) * 8);
   color: var(--pl-text);
   white-space: nowrap;
 }
@@ -293,7 +303,7 @@
 
 .pl-dur {
   flex: none;
-  margin-left: calc(var(--u) * 3);
+  margin-left: calc(var(--fp-pl) * 6);
   color: var(--pl-dur);
 }
 
@@ -363,7 +373,7 @@
   top: 0;
   bottom: 0;
   padding: calc(var(--u) * 1.5) calc(var(--u) * 3);
-  font-family: 'VT323', monospace;
+  font-family: 'DuoPixel', monospace;
   font-size: var(--fs-info);
   line-height: calc(var(--u) * 8);
   white-space: nowrap;
@@ -508,10 +518,9 @@
   position: relative;
   margin: 0 calc(var(--u) * 7);
   padding: calc(var(--u) * 5) calc(var(--u) * 6);
-  font-family: 'VT323', monospace;
+  font-family: 'DuoPixel', monospace;
   font-size: var(--fs-menu);
   line-height: calc(var(--u) * 10);
-  text-transform: uppercase;
 }
 
 .sheet-body p {
@@ -519,7 +528,7 @@
 }
 
 .sheet-big {
-  font-size: calc(var(--fs-menu) * 1.7);
+  font-size: calc(var(--fs-menu) * 2);
   line-height: calc(var(--u) * 16);
 }
 

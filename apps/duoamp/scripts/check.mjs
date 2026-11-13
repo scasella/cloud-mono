@@ -28,7 +28,7 @@ try {
   const page = await ctx.newPage();
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(`${server.url}?sim=0`);
+  await page.goto(`${server.url}?test=1&sim=0`);
   await page.evaluate(() => document.fonts.ready);
   const st = () => page.evaluate(() => window.duoamp.engine.getState());
   const prefs = () => page.evaluate(() => JSON.parse(JSON.stringify(window.duoamp.prefs)));
@@ -51,6 +51,28 @@ try {
   ok((await page.getAttribute('html', 'data-posture')) === 'cover', 'auto-detects cover at 382x600');
   ok((await st()).status === 'stopped', 'starts stopped');
   ok((await st()).index === 30, 'track 31 loaded');
+  ok(
+    (await page.evaluate(() => document.querySelector('.marquee-text').textContent)).startsWith('31. JOHANNES BRECHT - ALL WE GOT (2:36)  ***  31. '),
+    'marquee format "31. ARTIST - TITLE (2:36)  ***  " repeated',
+  );
+  const row100 = await page.evaluate(() => document.querySelector('.pl-row[data-i="99"] .pl-name').textContent);
+  ok(row100.includes('???') && !/[぀-ヿ]/.test(row100), `unsupported script falls back to "?": "${row100}"`);
+  const density = await page.evaluate(() => {
+    const sc = document.querySelector('.pl-scroll');
+    const row = document.querySelector('.pl-row');
+    const name = document.querySelector('.pl-name');
+    const fs = parseFloat(getComputedStyle(name).fontSize);
+    return { rows: sc.clientHeight / row.offsetHeight, chars: Math.floor(name.getBoundingClientRect().width / (fs * 0.75)) };
+  });
+  ok(density.rows >= 18 && density.rows <= 22, `cover playlist shows ~19 rows (${density.rows.toFixed(1)})`);
+  ok(density.chars >= 33 && density.chars <= 38, `row fits ~33+ characters before ".." (${density.chars})`);
+  ok(await page.evaluate(() => document.fonts.check("12px 'DuoPixel'", 'A')), 'DuoPixel font loaded');
+  {
+    const p2 = await ctx.newPage();
+    await p2.goto(`${server.url}?sim=0`);
+    ok((await p2.evaluate(() => typeof window.duoamp)) === 'undefined', 'test hook hidden without ?test=1');
+    await p2.close();
+  }
 
   await page.tap('.t-play');
   await page.waitForTimeout(1200);
@@ -190,7 +212,7 @@ try {
     for (const skin of ['light', 'classic']) {
       for (const eq of [false, true]) {
         await page.setViewportSize({ width: size[0], height: size[1] });
-        await page.goto(`${server.url}?sim=0&layout=auto&skin=${skin}`);
+        await page.goto(`${server.url}?test=1&sim=0&layout=auto&skin=${skin}`);
         await page.evaluate(() => localStorage.clear());
         await page.reload();
         await page.evaluate(() => document.fonts.ready);
@@ -224,7 +246,7 @@ try {
   // prefers-reduced-motion: marquee holds still.
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.setViewportSize({ width: 382, height: 600 });
-  await page.goto(`${server.url}?sim=0`);
+  await page.goto(`${server.url}?test=1&sim=0`);
   await page.evaluate(() => window.duoamp.engine.play());
   const t1 = await page.evaluate(() => document.querySelector('.marquee-text').style.transform);
   await page.waitForTimeout(700);

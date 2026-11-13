@@ -23,8 +23,6 @@ export interface AppContext {
   openSheet(kind: SheetKind, from: HTMLElement): void;
   /** Transient marquee message (e.g. while dragging). linger=0 keeps it until cleared. */
   message(text: string | null, lingerMs?: number): void;
-  /** Make a window the "active" one (classic skin dims the other title bars). */
-  focusWindow(el: HTMLElement): void;
   reducedMotion: boolean;
   /** Posture currently laid out. */
   posture(): Posture;

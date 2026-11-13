@@ -68,11 +68,13 @@ export function computePanes(
   insets: Insets,
   gutter: number,
   segs?: DOMRectReadOnly[] | null,
+  corner: { x: number; y: number } = { x: 0, y: 0 },
 ): { panes: Rect[]; fold?: Rect } {
-  const cx = insets.left;
-  const cy = insets.top;
-  const cr = W - insets.right;
-  const cb = H - insets.bottom;
+  // Edges with no system inset get a small corner inset so nothing sits under the rounded glass.
+  const cx = insets.left > 0 ? insets.left : corner.x;
+  const cy = insets.top > 0 ? insets.top : corner.y;
+  const cr = W - (insets.right > 0 ? insets.right : corner.x);
+  const cb = H - (insets.bottom > 0 ? insets.bottom : corner.y);
   const clip = (r: Rect): Rect => {
     const x = Math.max(r.x, cx);
     const y = Math.max(r.y, cy);
@@ -149,7 +151,8 @@ export function planLayout(input: PlanInput): LayoutPlan & { zoom: number } {
       bottom: spec.insets.bottom * zoom,
       left: spec.insets.left * zoom,
     };
-    const { panes, fold } = computePanes(posture, W, H, insets, DEVICE.foldGutter * zoom);
+    const corner = { x: DEVICE.cornerInset.x * zoom, y: DEVICE.cornerInset.y * zoom };
+    const { panes, fold } = computePanes(posture, W, H, insets, DEVICE.foldGutter * zoom, null, corner);
     return {
       mode: 'sim',
       posture,
@@ -168,7 +171,7 @@ export function planLayout(input: PlanInput): LayoutPlan & { zoom: number } {
   const source: LayoutSource = input.layoutPref === 'auto' ? detected.source : 'override';
   const insets = readSafeAreaInsets();
   const useSegs = segs && ((posture === 'book' && detected.posture === 'book') || (posture === 'tabletop' && detected.posture === 'tabletop'));
-  const { panes, fold } = computePanes(posture, vw, vh, insets, DEVICE.foldGutter, useSegs ? segs : null);
+  const { panes, fold } = computePanes(posture, vw, vh, insets, DEVICE.foldGutter, useSegs ? segs : null, DEVICE.cornerInset);
   return { mode: 'bleed', posture, source, screen: { w: vw, h: vh }, insets, panes, fold, zoom: 1, devicePosture: dp };
 }
 

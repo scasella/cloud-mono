@@ -101,24 +101,28 @@ export class EqWindow implements WinComponent {
     if (!compact) {
       place(this.onBtn.el, 10, 18, 24, 11);
       place(this.autoBtn.el, 37, 18, 32, 11);
-      place(this.graphBox, 84, 17, 113, 20);
+      place(this.graphBox, 80, 16, 124, 26);
       this.graphBox.style.display = '';
-      place(this.presetsBtn, 208, 18, 52, 12);
-      const top = 42;
-      const th = 58;
-      place(this.preamp.el, 12, top, 14, th);
-      // Scale labels sit on the knob centres for +12 / 0 / -12.
+      place(this.presetsBtn, 212, 18, 52, 12);
+      // Band sliders run the full height between the graph and the labels;
+      // the preamp (left of the graph) starts higher.
+      const top = 45;
+      const th = 57;
+      const ptop = 33;
+      const pth = top + th - ptop;
+      place(this.preamp.el, 12, ptop, 14, pth);
+      // Scale labels sit on the preamp knob centres for +12 / 0 / -12.
       const knob = 10;
-      const ys = [top + knob / 2, top + th / 2, top + th - knob / 2];
+      const ys = [ptop + knob / 2, ptop + pth / 2, ptop + pth - knob / 2];
       this.scale.forEach((el, i) => {
         el.style.display = '';
         place(el, 29, ys[i] - 4, 30, 8);
       });
-      place(this.preampLabel, 2, 104, 36, 8);
+      place(this.preampLabel, 2, 105, 36, 8);
       this.bands.forEach((b, i) => {
         const x = 76 + i * 19.2;
         place(b.el, x, top, 14, th);
-        place(this.bandLabels[i], x - 4, 104, 22, 8);
+        place(this.bandLabels[i], x - 4, 105, 22, 8);
       });
     } else {
       // Compact strip (tabletop slot): controls in a left column, no graph.
@@ -167,11 +171,15 @@ export class EqWindow implements WinComponent {
     const py = mid - (s.preamp / EQ_RANGE) * amp;
     c.ctx.fillStyle = tk.graphLine2;
     c.rect(0, py - 0.5, 2, 1);
-    // Catmull-Rom through the ten band values.
+    // Smooth Catmull-Rom curve through the ten band values, stroked at device resolution.
     const pts = s.bands.map((db, i) => ({ x: 3 + (i * (W - 6)) / 9, y: mid - (db / EQ_RANGE) * amp }));
-    const ys: number[] = [];
-    for (let x = 0; x < W; x += 1) {
-      const fx = Math.max(pts[0].x, Math.min(pts[9].x, x + 0.5));
+    const k = c.k;
+    const g = c.ctx;
+    g.save();
+    g.beginPath();
+    const steps = Math.max(40, Math.round(W * k / 2));
+    for (let n = 0; n <= steps; n++) {
+      const fx = pts[0].x + ((pts[9].x - pts[0].x) * n) / steps;
       let i = 0;
       while (i < 8 && fx > pts[i + 1].x) i++;
       const p0 = pts[Math.max(0, i - 1)];
@@ -182,16 +190,25 @@ export class EqWindow implements WinComponent {
       const t2 = t * t;
       const t3 = t2 * t;
       const y = 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
-      ys.push(Math.max(1, Math.min(H - 2, y)));
+      const yy = Math.max(1, Math.min(H - 1, y));
+      if (n === 0) g.moveTo(0, yy * k);
+      g.lineTo(fx * k, yy * k);
+      if (n === steps) g.lineTo(W * k, yy * k);
     }
-    for (let x = 0; x < ys.length; x++) {
-      const y = Math.round(ys[x]);
-      const prev = x > 0 ? Math.round(ys[x - 1]) : y;
-      const y0 = Math.min(y, prev);
-      const y1 = Math.max(y, prev);
-      const strong = this.ctx.prefs.skin === 'classic' ? Math.abs(y - mid) > amp * 0.5 : false;
-      c.ctx.fillStyle = !s.on ? tk.lcdTextDim : strong ? tk.graphLine2 : tk.graphLine;
-      c.rect(x, y0, 1, y1 - y0 + 1);
-    }
+    if (!s.on) g.strokeStyle = tk.lcdTextDim;
+    else if (this.ctx.prefs.skin === 'classic') {
+      // Classic: green near 0 dB shading to yellow at the extremes.
+      const grad = g.createLinearGradient(0, 0, 0, H * k);
+      grad.addColorStop(0, tk.graphLine2);
+      grad.addColorStop(0.35, tk.graphLine);
+      grad.addColorStop(0.65, tk.graphLine);
+      grad.addColorStop(1, tk.graphLine2);
+      g.strokeStyle = grad;
+    } else g.strokeStyle = tk.graphLine;
+    g.lineWidth = Math.max(1, 1.1 * k);
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+    g.stroke();
+    g.restore();
   }
 }

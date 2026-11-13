@@ -58,9 +58,6 @@ export function compose(p: Posture, eqOn: boolean, plOn: boolean, w: Record<'mai
 function snapFp(px: number, dpr: number) {
   return Math.max(1, Math.round(px * dpr)) / dpr;
 }
-function snapPx(px: number, dpr: number) {
-  return Math.max(1, Math.round(px * dpr)) / dpr;
-}
 
 /** Font sizes snapped so pixel-font pixels land on whole device pixels. */
 function typeVars(pane: HTMLElement, u: number) {
@@ -70,13 +67,20 @@ function typeVars(pane: HTMLElement, u: number) {
   // Silkscreen: 8 font-pixels per em.
   s.setProperty('--fs-label', `${8 * snapFp(0.8 * u, dpr)}px`);
   s.setProperty('--fs-title-sk', `${8 * snapFp(0.95 * u, dpr)}px`);
-  // VT323: sizes rounded to whole device pixels.
-  s.setProperty('--fs-title-vt', `${snapPx(11.5 * u, dpr)}px`);
-  s.setProperty('--fs-marquee', `${snapPx(13 * u, dpr)}px`);
-  s.setProperty('--fs-readout', `${snapPx(12 * u, dpr)}px`);
-  s.setProperty('--fs-pl', `${snapPx(13 * u, dpr)}px`);
-  s.setProperty('--fs-info', `${snapPx(9.5 * u, dpr)}px`);
-  s.setProperty('--fs-menu', `${snapPx(12 * u, dpr)}px`);
+  // DuoPixel: 8 font pixels per em; each font pixel snapped to whole device pixels.
+  // --fp-* is the font pixel itself, so tracking can be a whole number of font pixels too.
+  const dp = (name: string, k: number) => {
+    const fp = snapFp(k * u, dpr);
+    s.setProperty(`--fp-${name}`, `${fp}px`);
+    s.setProperty(`--fs-${name}`, `${8 * fp}px`);
+  };
+  dp('title', 0.9);
+  dp('marquee', 1.1);
+  dp('readout', 1);
+  dp('pl', 1);
+  dp('info', 0.9);
+  dp('menu', 1);
+  dp('logo', 1.75);
 }
 
 export class App {
@@ -106,7 +110,6 @@ export class App {
       openPresets: (a) => self.overlays.openPresets(a),
       openSheet: (k: SheetKind, from) => self.overlays.openSheet(k, from),
       message: (t, linger = 1000) => self.mainWin.setMessage(t, linger),
-      focusWindow: (el) => this.focusWindow(el),
       posture: () => self.plan?.posture ?? 'cover',
     };
     this.overlays = new Overlays(this.ctx);
@@ -135,7 +138,6 @@ export class App {
       vis: new VisWindow(this.ctx),
       dock: new DockWindow(),
     };
-    this.focusWindow(this.mainWin.el);
 
     eq.subscribe(() => {
       prefs.eq = eq.get();
@@ -151,10 +153,6 @@ export class App {
       }
     });
 
-    this.screen.addEventListener('pointerdown', (e) => {
-      const w = (e.target as HTMLElement).closest('.win') as HTMLElement | null;
-      if (w && !w.classList.contains('popup')) this.focusWindow(w);
-    }, true);
     // No long-press callouts / context menus on touch.
     this.stage.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', (e) => this.onKey(e));
@@ -179,10 +177,6 @@ export class App {
     applySkin(s);
     this.commit();
     this.relayout();
-  }
-
-  private focusWindow(el: HTMLElement) {
-    for (const w of Object.values(this.wins)) w.el.classList.toggle('is-active', w.el === el);
   }
 
   relayout() {

@@ -15,16 +15,17 @@ export interface SkinTokens {
   chassisLight: string;
   chassisShade: string;
   titleText: string;
-  titleTextInactive: string;
   railHi: string;
   railLo: string;
-  railInactiveHi: string;
-  railInactiveLo: string;
   lcdBg: string;
   lcdEdge: string;
   lcdText: string;
   lcdTextDim: string;
   lcdGlow: string;
+  /** LCD time digits. */
+  lcdDigit: string;
+  /** The "_D_" logo mark. */
+  logo: string;
   label: string;
   labelLit: string;
   labelDim: string;
@@ -60,6 +61,8 @@ export interface SkinTokens {
   visMid: string;
   visHi: string;
   visPeak: string;
+  /** Lighter top row on each classic bar. */
+  visCap: string;
   visGrid: string;
   graphLine: string;
   graphLine2: string;
@@ -76,16 +79,15 @@ export const SKINS: Record<SkinId, SkinTokens> = {
     chassisLight: '#ffffff',
     chassisShade: '#b4b0d0',
     titleText: '#5d5a78',
-    titleTextInactive: '#9592ad',
     railHi: '#fdfcff',
     railLo: '#a29ebf',
-    railInactiveHi: '#f6f5fc',
-    railInactiveLo: '#c3bfd8',
     lcdBg: '#11188e',
     lcdEdge: '#6f6b9b',
     lcdText: '#eef0ff',
     lcdTextDim: '#2c37a8',
     lcdGlow: 'rgba(170,185,255,0.55)',
+    lcdDigit: '#d9dcff',
+    logo: '#8d88c4',
     label: '#6e6b8c',
     labelLit: '#2b3192',
     labelDim: '#bdb9d6',
@@ -121,6 +123,7 @@ export const SKINS: Record<SkinId, SkinTokens> = {
     visMid: '#4d63f0',
     visHi: '#9aa8ff',
     visPeak: '#e8ebff',
+    visCap: '#c9d0ff',
     visGrid: '#0d137a',
     graphLine: '#a9b6ff',
     graphLine2: '#6f82f7',
@@ -135,16 +138,15 @@ export const SKINS: Record<SkinId, SkinTokens> = {
     chassisLight: '#6c6c96',
     chassisShade: '#222240',
     titleText: '#e9e9f6',
-    titleTextInactive: '#9c9cb8',
     railHi: '#f0aa3c',
     railLo: '#5e3608',
-    railInactiveHi: '#8f855c',
-    railInactiveLo: '#3a3624',
     lcdBg: '#000000',
     lcdEdge: '#1a1a2e',
     lcdText: '#2cee2c',
     lcdTextDim: '#0b360b',
     lcdGlow: 'rgba(40,240,40,0.25)',
+    lcdDigit: '#2cee2c',
+    logo: '#e8a23a',
     label: '#c3c3dc',
     labelLit: '#3cf03c',
     labelDim: '#2c3a34',
@@ -180,6 +182,7 @@ export const SKINS: Record<SkinId, SkinTokens> = {
     visMid: '#5cd42a',
     visHi: '#dfe03a',
     visPeak: '#d4d4e2',
+    visCap: '#d6f5b0',
     visGrid: '#0a140a',
     graphLine: '#30f030',
     graphLine2: '#e6c22c',

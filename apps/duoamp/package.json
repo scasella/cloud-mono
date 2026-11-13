@@ -1,0 +1,28 @@
+{
+  "name": "duoamp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "devDependencies": {
+    "typescript": "~5.9",
+    "vite": "^7.3.8"
+  },
+  "dependencies": {
+    "@fontsource/bytesized": "^5.3.0",
+    "@fontsource/doto": "^5.3.0",
+    "@fontsource/jersey-10": "^5.3.0",
+    "@fontsource/micro-5": "^5.3.0",
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "@fontsource/silkscreen": "^5.3.0",
+    "@fontsource/tiny5": "^5.3.0",
+    "@fontsource/vt323": "^5.3.0",
+    "@fontsource/workbench": "^5.3.0"
+  }
+}

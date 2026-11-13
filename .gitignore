@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.vite/
+apps/duoamp/screenshots/
+.env
+.env.*
+!.env.example

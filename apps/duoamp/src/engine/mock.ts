@@ -1,4 +1,4 @@
-import type { ChangeKind, Listener, PlaybackStatus, PlayerEngine, PlayerState, Track } from './types';
+import { NO_DISALLOWS, type Capabilities, type ChangeKind, type Listener, type NoticeListener, type PlaybackStatus, type PlayerEngine, type PlayerState, type Track } from './types';
 import { SpectrumSynth, SYNTH_BANDS, resampleSpectrum } from './spectrum';
 
 export interface MockEngineOptions {
@@ -14,6 +14,9 @@ export interface MockEngineOptions {
 }
 
 const PREV_RESTART_THRESHOLD = 3;
+const MOCK_CAPS: Capabilities = Object.freeze({
+  volume: true, balance: true, seek: true, inBrowserAudio: false, needsGesture: false, streamInfo: true,
+});
 const TICK_MS = 250;
 
 /**
@@ -34,6 +37,7 @@ export class MockEngine implements PlayerEngine {
   private sourceLabel: string;
   private rate: number;
   private listeners = new Set<Listener>();
+  private noticeListeners = new Set<NoticeListener>();
   private timer: number | undefined;
   private synth = new SpectrumSynth();
   private synthBuf = new Float32Array(SYNTH_BANDS);
@@ -73,6 +77,7 @@ export class MockEngine implements PlayerEngine {
     return {
       tracks: this.tracks,
       index: this.index,
+      current: this.current() ?? null,
       status: this.status,
       position: this.getPosition(),
       duration: this.current()?.duration ?? 0,
@@ -81,6 +86,10 @@ export class MockEngine implements PlayerEngine {
       shuffle: this.shuffle,
       repeat: this.repeat,
       sourceLabel: this.sourceLabel,
+      serviceLabel: '',
+      loading: false,
+      capabilities: MOCK_CAPS,
+      disallows: NO_DISALLOWS,
     };
   }
 
@@ -88,6 +97,13 @@ export class MockEngine implements PlayerEngine {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
+
+  subscribeNotices(listener: NoticeListener): () => void {
+    this.noticeListeners.add(listener);
+    return () => this.noticeListeners.delete(listener);
+  }
+
+  userGesture() {}
 
   private emit(...kinds: ChangeKind[]) {
     const set = new Set(kinds);
@@ -155,7 +171,7 @@ export class MockEngine implements PlayerEngine {
 
   // ---- commands ------------------------------------------------------------
 
-  play() {
+  async play() {
     if (!this.current()) return;
     if (this.status === 'playing') {
       // Like the classic deck: PLAY while playing restarts the track.
@@ -169,7 +185,7 @@ export class MockEngine implements PlayerEngine {
     this.emit('status', 'tick');
   }
 
-  pause() {
+  async pause() {
     if (this.status === 'playing') {
       this.setAnchor(this.getPosition());
       this.status = 'paused';
@@ -181,25 +197,25 @@ export class MockEngine implements PlayerEngine {
     }
   }
 
-  togglePause() {
+  async togglePause() {
     if (this.status === 'playing') this.pause();
     else this.play();
   }
 
-  stop() {
+  async stop() {
     if (this.status === 'stopped' && this.anchorPos === 0) return;
     this.status = 'stopped';
     this.setAnchor(0);
     this.emit('status', 'tick');
   }
 
-  next() {
+  async next() {
     const n = this.pickNext();
     const target = n === -1 ? 0 : n;
     this.goto(target, this.status);
   }
 
-  prev() {
+  async prev() {
     if (this.getPosition() > PREV_RESTART_THRESHOLD && this.status === 'playing') {
       this.setAnchor(0);
       this.emit('tick');
@@ -213,7 +229,7 @@ export class MockEngine implements PlayerEngine {
     this.goto(target, this.status, false);
   }
 
-  seek(seconds: number) {
+  async seek(seconds: number) {
     const d = this.current()?.duration ?? 0;
     const pos = Math.max(0, Math.min(d - 0.05, seconds));
     if (this.status === 'stopped') {
@@ -227,27 +243,27 @@ export class MockEngine implements PlayerEngine {
     this.emit('tick');
   }
 
-  playIndex(index: number) {
+  async playIndex(index: number) {
     if (index < 0 || index >= this.tracks.length) return;
     this.goto(index, 'playing');
   }
 
-  setVolume(v: number) {
+  async setVolume(v: number) {
     this.volume = Math.max(0, Math.min(1, v));
     this.emit('settings');
   }
 
-  setBalance(b: number) {
+  async setBalance(b: number) {
     this.balance = Math.max(-1, Math.min(1, b));
     this.emit('settings');
   }
 
-  setShuffle(on: boolean) {
+  async setShuffle(on: boolean) {
     this.shuffle = on;
     this.emit('settings');
   }
 
-  setRepeat(on: boolean) {
+  async setRepeat(on: boolean) {
     this.repeat = on;
     this.emit('settings');
   }
@@ -274,5 +290,6 @@ export class MockEngine implements PlayerEngine {
   dispose() {
     if (this.timer !== undefined) clearInterval(this.timer);
     this.listeners.clear();
+    this.noticeListeners.clear();
   }
 }

@@ -28,6 +28,10 @@ const ok = (cond, msg) => {
   if (!cond) failures++;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+process.on('unhandledRejection', (e) => {
+  console.log(`FAIL  unhandled rejection: ${e?.stack ?? e}`);
+  failures++;
+});
 
 const server = await startServer();
 const browser = await chromium.launch();
@@ -67,6 +71,15 @@ const svc = (page) => page.evaluate(() => {
   const sp = window.duoamp.spotify;
   return { signedIn: sp.signedIn, mode: sp.engine?.mode ?? null, busy: sp.busy, authMessage: sp.authMessage, load: sp.loadStatus, playlists: sp.playlists?.length ?? null, fallback: sp.sdkFallbackReason };
 });
+/** Poll a node-side condition (fake Spotify state) instead of sleeping a fixed time. */
+const waitFor = async (fn, timeout = 4000) => {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeout) {
+    if (await fn()) return true;
+    await sleep(40);
+  }
+  return !!(await fn());
+};
 const until = (page, fn, arg, timeout = 8000) => page.waitForFunction(fn, arg, { timeout, polling: 50 }).then(() => true, () => false);
 const marquee = (page) => page.textContent('.marquee-text');
 /** The marquee's track text (not a transient message that may be showing). */
@@ -108,7 +121,7 @@ const section = async (name, fn) => {
   }
 };
 
-const SCOPES = 'streaming user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-read-private'.split(' ');
+const SCOPES = 'streaming user-read-email user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-read user-read-private'.split(' ');
 
 try {
   // ------------------------------------------------------------------------
@@ -296,14 +309,24 @@ try {
   });
 
   // ------------------------------------------------------------------------
-  for (const shape of ['new', 'old', 'alias']) {
+  const PAGING = {
+    new: { opts: { shape: 'new' }, trace: 'items:200 items:200 items:200', fieldsHas: 'item(' },
+    old: { opts: { shape: 'old' }, trace: 'items:404 items:404 items:404 tracks:200 tracks:200 tracks:200', fieldsHas: 'track(' },
+    // /items still answering in the old shape, with `fields` honoured: item(...) yields nothing, track(...) works.
+    alias: { opts: { shape: 'alias' }, trace: 'items:200 items:200 items:200 items:200', fieldsHas: 'track(' },
+    // `fields` rejected on /items: falls back to /items without a filter (never to /tracks first).
+    fields400: { opts: { shape: 'new', fields400: true }, trace: 'items:400 items:400 items:200 items:200 items:200', fieldsHas: null },
+    // A page fails mid-list: the next attempt starts over, no duplicated rows.
+    midfail: { opts: { shape: 'new', failOnce: [{ match: /\/playlists\/pl120\/items$/, offset: 50, status: 404 }] }, trace: 'items:200 items:404 items:200 items:200 items:200', fieldsHas: 'track(' },
+  };
+  for (const [shape, P] of Object.entries(PAGING)) {
     await section(`paging 120-track playlist (${shape} shape)`, async () => {
-      const s = await session({ shape });
+      const s = await session(P.opts);
       const { page, fake } = s;
       await signIn(page);
       await until(page, () => window.duoamp.spotify.playlists?.length === 3);
       const counts = await page.evaluate(() => window.duoamp.spotify.playlists.map((p) => p.total));
-      ok(counts[0] === 125, `playlist count read from ${shape === 'old' ? 'tracks.total' : 'items.total'} (${counts.join(',')})`);
+      ok(counts[0] === 125, `playlist count read from ${P.opts.shape === 'old' ? 'tracks.total' : 'items.total'} (${counts.join(',')})`);
       await page.evaluate(() => {
         window.__seen = [];
         window.duoamp.engine.subscribe((st, k) => k.has('tracks') && window.__seen.push([st.tracks.length, st.loading]));
@@ -315,11 +338,15 @@ try {
       const seen = await page.evaluate(() => window.__seen);
       ok(seen.some(([n, l]) => n > 0 && n < 120 && l), `loaded progressively (${seen.map((x) => x[0]).join(' ')})`);
       const reqs = fake.requests((r) => /\/playlists\/pl120\/(items|tracks)$/.test(r.path));
-      const okReqs = reqs.filter((r) => r.status === 200);
-      ok(okReqs.length === 3 && okReqs.every((r) => r.query.limit === '50'), `3 pages of 50 (${reqs.map((r) => `${r.path.split('/').pop()}:${r.status}`).join(' ')})`);
-      ok(okReqs.every((r) => r.query.fields && r.query.fields.includes(shape === 'old' ? 'track(' : 'item(')), 'fields parameter used');
-      if (shape === 'old') ok(reqs[0].status === 404 && reqs[0].path.endsWith('/items'), 'tried /items first, fell back to /tracks');
-      const pos = await page.evaluate(() => window.duoamp.spotify.engine.getPositions().slice(0, 9));
+      const trace = reqs.map((r) => `${r.path.split('/').pop()}:${r.status}`).join(' ');
+      ok(trace === P.trace && reqs.every((r) => r.query.limit === '50'), `request sequence ${trace}`);
+      if (trace !== P.trace) console.log(reqs.map((r) => `${r.query.offset ?? 0}:${(r.query.fields ?? '').slice(0, 40)}`).join('\n'));
+      const last3 = reqs.slice(-3);
+      ok(P.fieldsHas ? last3.every((r) => r.query.fields?.includes(P.fieldsHas)) : last3.every((r) => !r.query.fields), `working attempt ${P.fieldsHas ? 'uses fields with ' + P.fieldsHas : 'has no fields filter'}`);
+      ok(new Set(v.uris).size === 120, 'no duplicated rows');
+      const allPos = await page.evaluate(() => [...window.duoamp.spotify.engine.getPositions()]);
+      ok(allPos.every((p, i) => i === 0 || p > allPos[i - 1]), 'playlist positions strictly increasing (no rows from a failed attempt)');
+      const pos = allPos.slice(0, 9);
       ok(pos.join() === '0,1,2,3,4,5,6,8,9', `null/local/episode entries skipped, playlist positions kept (${pos.join()})`);
       ok(!v.uris.some((u) => !u.startsWith('spotify:track:')), 'no local or episode URIs in the list');
       const info = await page.evaluate(() => [...document.querySelectorAll('.pl-info-line')].map((e) => e.textContent));
@@ -357,7 +384,7 @@ try {
     await signIn(s.page);
     s.fake.cfg.rateLimit.times = 5;
     const r = await s.page.evaluate(() => window.duoamp.spotify.api.get('/me').then(() => 'ok', (e) => `${e.kind}:${e.reason}:${e.message}`));
-    ok(/^rate_limited:QUOTA_EXCEEDED:SPOTIFY QUOTA EXCEEDED/.test(r), `long Retry-After surfaced as an error (${r})`);
+    ok(/^rate_limited:QUOTA_EXCEEDED:SPOTIFY QUOTA EXCEEDED/.test(r), `long Retry-After surfaced as an error, keeping Spotify's reason (${r})`);
     await close(s);
   });
 
@@ -406,7 +433,8 @@ try {
     ok(play?.body?.context_uri === 'spotify:playlist:pl120' && play.body.offset?.uri === t3, `context + offset (${JSON.stringify(play?.body)})`);
     ok(fake.sdk.events.includes('activate:true') && fake.sdk.events.indexOf('activate:true') < fake.sdk.events.indexOf('player_state_changed'), 'activateElement() ran inside the gesture, before playback');
     ok(!fake.sdk.events.includes('autoplay_failed'), 'no autoplay failure');
-    await sleep(300);
+    await waitFor(() => fake.player && !fake.player.paused);
+    await until(page, (u) => window.duoamp.engine.getState().index === 2 && window.duoamp.engine.getState().current?.uri === u, t3);
     let v = await st(page);
     ok(v.index === 2 && v.current.uri === t3 && fake.player.paused === false, 'row 3 current, Spotify playing it');
     ok(await page.locator('.pl-row[data-i="2"].is-current').count() === 1, 'row 3 highlighted');
@@ -418,10 +446,11 @@ try {
 
     await page.tap('.t-pause');
     await until(page, () => window.duoamp.engine.getState().status === 'paused');
-    await sleep(200);
+    await waitFor(() => fake.player.paused && fake.sdk.events.includes('cmd:pause'));
     ok(fake.player.paused === true && fake.sdk.events.includes('cmd:pause'), 'pause via SDK');
     await page.tap('.t-play');
-    await sleep(300);
+    await waitFor(() => !fake.player.paused && fake.sdk.events.includes('cmd:resume'));
+    await until(page, () => window.duoamp.engine.getState().status === 'playing');
     ok(fake.player.paused === false && fake.sdk.events.includes('cmd:resume') && (await st(page)).status === 'playing', 'play resumes via SDK');
 
     const seeksBefore = fake.sdk.events.filter((e) => e === 'cmd:seek').length;
@@ -430,27 +459,29 @@ try {
     await page.mouse.down();
     for (let i = 1; i <= 8; i++) await page.mouse.move(k.x + k.width / 2 + i * 15, k.y + k.height / 2);
     await page.mouse.up();
-    await sleep(400);
+    await waitFor(() => fake.sdk.events.filter((e) => e === 'cmd:seek').length > seeksBefore);
+    await sleep(300); // and no second seek after that
     const seeks = fake.sdk.events.filter((e) => e === 'cmd:seek').length - seeksBefore;
     ok(seeks === 1, `seek sent once on release (${seeks})`);
     ok(Math.abs(fake.pos() / 1000 - (await page.evaluate(() => window.duoamp.engine.getPosition()))) < 1.5 && fake.pos() > 20000, `seek applied (${Math.round(fake.pos() / 1000)} s)`);
 
     await page.tap('.t-next');
     await until(page, () => window.duoamp.engine.getState().index === 3);
-    await sleep(300);
+    await waitFor(() => fake.player.idx === 3);
     ok(fake.player.idx === 3 && (await st(page)).index === 3, 'next -> row 4');
     await page.tap('.btn-shuffle');
-    await sleep(300);
+    await waitFor(() => fake.player.shuffle);
     const sh = fake.requests('/me/player/shuffle').at(-1);
     ok(sh?.query.state === 'true' && sh.query.device_id === fake.sdk.deviceId && fake.player.shuffle, 'shuffle on via Web API');
     await page.tap('.btn-rep');
-    await sleep(300);
+    await waitFor(() => fake.player.repeat === 'context');
     ok(fake.requests('/me/player/repeat').at(-1)?.query.state === 'context' && fake.player.repeat === 'context', 'REP -> repeat context');
     await page.tap('.btn-rep');
-    await sleep(300);
+    await waitFor(() => fake.player.repeat === 'off');
     ok(fake.requests('/me/player/repeat').at(-1)?.query.state === 'off', 'REP again -> repeat off');
     await page.tap('.btn-shuffle');
-    await sleep(300);
+    await waitFor(() => !fake.player.shuffle);
+    await sleep(3600); // let the optimistic holds lapse so remote state wins below
 
     // Reconciliation from real state: Spotify moves on by itself (e.g. track end, or controlled from the lock screen).
     fake.player.idx = 80;
@@ -560,23 +591,29 @@ try {
 
   // ------------------------------------------------------------------------
   await section('SDK init failure -> Connect fallback', async () => {
-    const s = await session({ sdk: 'init_error' });
+    const s = await session({ sdk: 'init_error', restrictedDevice: true });
     const { page, fake } = s;
     await signIn(page);
     await until(page, () => window.duoamp.spotify.engine?.mode === 'connect');
     const v = await svc(page);
     ok(v.mode === 'connect' && v.fallback === 'BROWSER NOT SUPPORTED', `fell back to Connect (${v.fallback})`);
     await openLibrary(page);
-    const sheet = await page.textContent('.sheet-library');
-    ok(sheet.toUpperCase().includes('REMOTE CONTROL') && sheet.toUpperCase().includes('FAKE IPHONE'), 'sheet shows remote mode and the device list');
+    // The devices fetch may still be in flight when the sheet opens: the open sheet must update itself.
+    const sheetOk = await until(page, () => {
+      const t = document.querySelector('.sheet-library')?.textContent.toUpperCase() ?? '';
+      return t.includes('REMOTE CONTROL') && t.includes('FAKE IPHONE');
+    });
+    ok(sheetOk, 'open sheet shows remote mode and updates with the device list');
+    ok(await page.locator('.lib-devices .lib-row[data-id="tv-1"].is-dim').count() === 1, 'restricted device listed dimmed');
     await page.tap('.sheet-ok');
     await pickPlaylist(page, 'pl120');
     await until(page, () => window.duoamp.spotify.loadStatus.state === 'done');
     await doubleTapRow(page, 4);
     await until(page, () => window.duoamp.engine.getState().status === 'playing');
-    await sleep(1200);
+    await waitFor(() => fake.player?.deviceId === 'phone-1' && !fake.player.paused);
+    await until(page, () => window.duoamp.engine.getState().index === 4, null, 6000);
     const play = fake.requests((r) => r.path === '/me/player/play').at(-1);
-    ok(play?.query.device_id === 'phone-1', 'idle phone targeted with device_id');
+    ok(play?.query.device_id === 'phone-1', 'idle phone targeted with device_id (restricted TV listed first is skipped)');
     ok(fake.player?.deviceId === 'phone-1' && !fake.player.paused, 'phone playing');
     ok((await st(page)).index === 4, 'row 5 current from polled state');
     const p0 = fake.requests((r) => r.path === '/me/player' && r.method === 'GET').length;
@@ -594,16 +631,16 @@ try {
     await page.exposeFunction('__msg', (t) => msgs.push(t));
     await page.evaluate(() => window.duoamp.engine.subscribeNotices((n) => window.__msg(`${n.code}|${n.text}`)));
     await page.tap('.t-pause');
-    await sleep(800);
+    await waitFor(() => msgs.some((m) => m.startsWith('no_active_device|')));
     ok(msgs.some((m) => m.startsWith('no_active_device|NO ACTIVE SPOTIFY DEVICE')), `NO_ACTIVE_DEVICE explained (${msgs.join(' / ')})`);
     // User opens Spotify on the phone and plays something else.
     fake.playOnPhone();
     await page.evaluate(() => window.duoamp.spotify.engine.refreshState());
-    await sleep(200);
+    await until(page, () => window.duoamp.engine.getState().status === 'playing' && window.duoamp.engine.getState().index === -1, null, 3000);
     const v2 = await st(page);
     ok(v2.status === 'playing' && v2.index === -1 && /ELSEWHERE|DRIVE|NIGHT|SIGNAL|\d/.test(v2.current?.title ?? ''), `picks up playback started on the phone (${v2.current?.title}), no row`);
     await page.tap('.t-pause');
-    await sleep(800);
+    await waitFor(() => fake.player.paused === true);
     ok(fake.player.paused === true, 'retry works once a device is active');
     // Hidden page backs off.
     await page.evaluate(() => {
@@ -623,6 +660,9 @@ try {
     await signIn(s.page);
     await until(s.page, () => window.duoamp.spotify.engine?.mode === 'connect');
     ok((await svc(s.page)).fallback === 'PLAYER SCRIPT DID NOT LOAD', 'script load failure -> Connect');
+    await s.page.evaluate(() => window.duoamp.spotify.setModePref('sdk'));
+    await until(s.page, () => !window.duoamp.spotify.busy, null, 10000);
+    ok((await s.page.evaluate(() => document.querySelectorAll('script[src*="sdk.scdn.co"]').length)) === 1 && s.fake.requests('sdk.scdn.co').length === 2, 'retry after a failed script load replaces the tag and refetches');
     await close(s);
 
     const s2 = await session({ sdk: 'account_error' });
@@ -657,24 +697,291 @@ try {
     ok(await until(s4.page, () => window.duoamp.spotify.engine?.mode === 'connect' && !window.duoamp.spotify.busy), 'manual switch to REMOTE');
     await s4.page.tap('.chip[data-mode="sdk"]');
     ok(await until(s4.page, () => window.duoamp.spotify.engine?.mode === 'sdk' && !window.duoamp.spotify.busy, null, 10000), 'manual switch to IN BROWSER');
+    ok((await s4.page.evaluate(() => document.querySelectorAll('script[src*="sdk.scdn.co"]').length)) === 1, 'SDK script tag reused, not duplicated');
     await s4.page.reload();
     ok(await until(s4.page, () => window.duoamp?.spotify?.modePref === 'sdk' && window.duoamp.spotify.engine?.mode === 'sdk'), 'mode choice persisted');
     await close(s4);
   });
 
   // ------------------------------------------------------------------------
+  // ---- review round ----------------------------------------------------------
+  await section('review: SDK needs user-read-email; missing scopes ask to reconnect', async () => {
+    const s = await session({ denyScopes: ['user-read-email'] });
+    const { page, fake } = s;
+    await signIn(page);
+    await until(page, () => window.duoamp.spotify.engine?.mode === 'connect', null, 15000);
+    const v = await svc(page);
+    ok(v.fallback === 'SIGN-IN REJECTED' && fake.sdk.events.filter((e) => e === 'register').length === 0, `fake SDK rejects a token without user-read-email -> Connect (${v.fallback})`);
+    ok((await page.evaluate(() => window.duoamp.spotify.missingScopes.join())) === 'user-read-email', 'missing scope detected from the granted scope list');
+    await openLibrary(page);
+    ok(await page.isVisible('.btn-reconnect'), 'library sheet offers RECONNECT');
+    fake.cfg.denyScopes = [];
+    await page.tap('.btn-reconnect');
+    ok(await until(page, () => window.duoamp?.spotify?.signedIn && window.duoamp.spotify.engine?.mode === 'sdk' && !window.duoamp.spotify.busy && window.duoamp.spotify.missingScopes.length === 0, null, 25000), 'after RECONNECT: all scopes granted, SDK mode');
+    await close(s);
+  });
+
+  await section('review: gesture unlock on every gesture event; transfers do not count as autoplay failures', async () => {
+    const s = await session();
+    const { page } = s;
+    await signIn(page);
+    await pickPlaylist(page, 'pl120');
+    await until(page, () => window.duoamp.spotify.loadStatus.state === 'done');
+    await page.locator('.pl-row[data-i="2"]').tap();
+    const kinds = await page.evaluate(() => window.duoamp.diag.list().filter((e) => /activateElement\(\) in/.test(e.msg)).map((e) => e.msg.split(' in ')[1]));
+    ok(['pointerup', 'touchend', 'click'].every((k) => kinds.includes(k)), `activateElement() ran in pointerup, touchend and click of one tap (${[...new Set(kinds)].join(', ')})`);
+    await close(s);
+
+    const s2 = await session();
+    const { page: p2, fake: f2 } = s2;
+    await signIn(p2);
+    f2.playOnPhone();
+    const msgs = [];
+    await p2.exposeFunction('__msg', (t) => msgs.push(t));
+    await p2.evaluate(() => window.duoamp.engine.subscribeNotices((n) => window.__msg(n.code)));
+    for (let i = 0; i < 3; i++) {
+      // Someone moves playback to "DuoAmp" from the phone's device picker; iOS will not auto-start it.
+      f2.playerApi('PUT', '/me/player', {}, { device_ids: [f2.sdk.deviceId], play: true });
+      await sleep(600);
+      f2.playerApi('PUT', '/me/player', {}, { device_ids: ['phone-1'], play: true });
+      await sleep(300);
+    }
+    const d = await p2.evaluate(() => window.duoamp.spotify.engine.describe());
+    ok(f2.sdk.events.filter((e) => e === 'autoplay_failed').length >= 3, 'fake: transfers to the SDK device arrive paused (iOS behaviour)');
+    ok((await svc(p2)).mode === 'sdk' && d.autoplayFailures === '0', `three paused transfers do not abandon SDK mode (failures counted: ${d.autoplayFailures})`);
+    ok(msgs.includes('autoplay_transfer'), 'user is told to tap PLAY');
+    await close(s2);
+  });
+
+  await section('review: SDK reconnects after not_ready; stale SDK state does not snap back', async () => {
+    const s = await session();
+    const { page, fake } = s;
+    await signIn(page);
+    fake.sdkGoOffline();
+    ok(await until(page, () => !window.duoamp.spotify.engine.ready, null, 2000), 'not_ready -> not ready');
+    ok(await until(page, () => window.duoamp.spotify.engine.ready, null, 6000), 'reconnected by itself (backoff)');
+    fake.sdkGoOffline();
+    await until(page, () => !window.duoamp.spotify.engine.ready, null, 2000);
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    ok(await until(page, () => window.duoamp.spotify.engine.ready, null, 1200), 'page becoming visible reconnects at once');
+    ok(Number((await page.evaluate(() => window.duoamp.spotify.engine.describe())).reconnects) >= 2, 'reconnect count in diagnostics');
+    await close(s);
+
+    const s2 = await session({ sdkStaleMs: 3000 });
+    await signIn(s2.page);
+    await pickPlaylist(s2.page, 'pl120');
+    await until(s2.page, () => window.duoamp.spotify.loadStatus.state === 'done');
+    await doubleTapRow(s2.page, 2);
+    await until(s2.page, () => window.duoamp.engine.getState().status === 'playing');
+    await sleep(4200); // past the optimistic holds
+    await s2.page.evaluate(() => window.duoamp.spotify.engine.refreshState());
+    const pos = await s2.page.evaluate(() => window.duoamp.engine.getPosition());
+    const real = s2.fake.pos() / 1000;
+    ok(Math.abs(pos - real) < 0.6, `3 s-old SDK snapshot placed by its timestamp: ${pos.toFixed(2)} vs real ${real.toFixed(2)}`);
+    await close(s2);
+  });
+
+  await section('review: rate-limit block fails fast; stale queued commands are dropped; hung command times out', async () => {
+    const s = await session();
+    const { page, fake } = s;
+    await signIn(page);
+    await pickPlaylist(page, 'pl120');
+    await until(page, () => window.duoamp.spotify.loadStatus.state === 'done');
+    await doubleTapRow(page, 2);
+    await until(page, () => window.duoamp.engine.getState().status === 'playing');
+    const msgs = [];
+    await page.exposeFunction('__msg', (t) => msgs.push(t));
+    await page.evaluate(() => window.duoamp.engine.subscribeNotices((n) => window.__msg(n.code)));
+    fake.cfg.rateLimit = { match: /^\/me\/player\/shuffle$/, times: 1, retryAfter: 120 };
+    await page.tap('.btn-shuffle');
+    await sleep(400);
+    ok(msgs.includes('rate_limited'), 'long Retry-After on a command -> rate-limited notice');
+    const n0 = fake.log.length;
+    const t0 = Date.now();
+    const r = await page.evaluate(() => window.duoamp.spotify.api.get('/me').then(() => 'ok', (e) => `${e.kind}:${e.retryAfter}`));
+    ok(/^rate_limited:1[012]\d$/.test(r) && Date.now() - t0 < 500 && fake.log.length === n0, `while blocked: fails fast without a request (${r}, ${Date.now() - t0} ms)`);
+    await page.tap('.btn-shuffle');
+    await sleep(300);
+    ok(fake.requests('/me/player/shuffle').length === 1, 'no command sent while blocked');
+    await page.evaluate(() => (window.duoamp.spotify.api.blockedUntil = 0));
+
+    fake.cfg.sdkHang = ['pause'];
+    await page.tap('.t-pause');
+    await sleep(100);
+    await page.tap('.t-next');
+    await page.tap('.btn-rep');
+    await sleep(11000);
+    ok(msgs.includes('timeout'), 'a command that never settles times out (10 s)');
+    ok(msgs.includes('command_dropped'), 'commands queued behind it for > 5 s are dropped');
+    ok(!fake.sdk.events.includes('cmd:next') && fake.requests('/me/player/repeat').length === 0, 'dropped commands were not replayed');
+    fake.cfg.sdkHang = [];
+    await page.tap('.t-next');
+    ok(await waitFor(() => fake.sdk.events.includes('cmd:next')), 'fresh commands work again');
+    await close(s);
+  });
+
+  await section('review: network failure during refresh is not a sign-out; Connect keeps polling', async () => {
+    const s = await session({ sdk: 'init_error' });
+    const { page, fake } = s;
+    await signIn(page);
+    await until(page, () => window.duoamp.spotify.engine?.mode === 'connect');
+    fake.revokeAccessTokens();
+    fake.cfg.tokenNetworkFailures = 2;
+    const r = await page.evaluate(() => window.duoamp.spotify.engine.refreshState().then(() => 'ok', (e) => e.kind));
+    ok(r === 'network', `refresh without network -> network error, not auth (${r})`);
+    await page.evaluate(() => window.duoamp.spotify.engine.poll());
+    const st1 = await page.evaluate(() => ({ signedIn: window.duoamp.spotify.signedIn, timer: window.duoamp.spotify.engine.timer !== undefined, failures: window.duoamp.spotify.engine.failures }));
+    ok(st1.signedIn && st1.timer && st1.failures >= 1, `still signed in, next poll scheduled with backoff (${JSON.stringify(st1)})`);
+    await page.evaluate(() => window.duoamp.spotify.engine.poll());
+    const st2 = await page.evaluate(() => window.duoamp.spotify.engine.failures);
+    ok(st2 === 0, 'recovers once the network is back');
+    await close(s);
+  });
+
+  await section('review: SDK authentication_error retries reset on ready; exhausted -> Connect', async () => {
+    const s = await session();
+    const { page, fake } = s;
+    await signIn(page);
+    for (let i = 0; i < 2; i++) {
+      fake.sdkEmit('authentication_error', { message: 'The access token expired' });
+      await sleep(300);
+      await until(page, () => window.duoamp.spotify.engine.ready, null, 4000);
+    }
+    ok((await svc(page)).mode === 'sdk' && (await page.evaluate(() => window.duoamp.spotify.engine.ready)), 'two separate auth errors, each recovered (retry count resets on ready)');
+    await close(s);
+
+    const s2 = await session({ sdkAuthFailOnReconnect: true });
+    await signIn(s2.page);
+    s2.fake.sdkEmit('authentication_error', { message: 'Invalid token scopes.' });
+    ok(await until(s2.page, () => window.duoamp.spotify.engine?.mode === 'connect', null, 8000), 'auth error that persists after start -> fatal hook -> Connect');
+    ok((await svc(s2.page)).fallback === 'SIGN-IN REJECTED', 'reason shown');
+    await close(s2);
+  });
+
+  await section('review: busy never sticks; sign-out on load is explained; library loads in parallel', async () => {
+    const s = await session({ sdkReadyDelayMs: 7000 });
+    const { page } = s;
+    await page.tap('.t-eject');
+    await page.fill('.sheet-input', CLIENT_ID);
+    await page.tap('.btn-connect');
+    ok(await until(page, () => window.duoamp?.spotify?.playlists?.length === 3 && window.duoamp.spotify.busy, null, 6000), 'playlists loaded while the SDK is still starting');
+    await page.evaluate(() => window.duoamp.spotify.disconnect());
+    ok(!(await svc(page)).busy, 'DISCONNECT during engine start clears busy');
+    ok(await signIn(page), 'CONNECT works again afterwards');
+    await close(s);
+
+    const s2 = await session();
+    await signIn(s2.page);
+    await s2.page.evaluate(() => {
+      const sp = window.duoamp.spotify;
+      sp.setModePref('connect');
+      sp.setModePref('sdk');
+    });
+    ok(await until(s2.page, () => !window.duoamp.spotify.busy && window.duoamp.spotify.engine?.mode === 'sdk', null, 10000), 'superseded engine start leaves busy cleared');
+
+    // The 6-month refresh limit surfaces as invalid_grant on load.
+    s2.fake.cfg.refreshInvalidGrant = true;
+    await s2.page.evaluate(() => {
+      const k = 'duoamp.spotify.tokens.v1';
+      const t = JSON.parse(localStorage.getItem(k));
+      t.expiresAt = Date.now() - 1000;
+      localStorage.setItem(k, JSON.stringify(t));
+    });
+    await s2.page.reload();
+    ok(await until(s2.page, () => window.duoamp && !window.duoamp.spotify.signedIn, null, 8000), 'expired sign-in on load -> signed out');
+    ok(await until(s2.page, () => /EXPIRED/.test(window.duoamp.app.main.msg ?? ''), null, 3000), 'marquee says why');
+    ok(/EXPIRED/.test((await svc(s2.page)).authMessage ?? ''), 'connect sheet message set');
+    await s2.page.tap('.t-eject');
+    ok((await s2.page.textContent('.sheet-library')).includes('EXPIRED'), 'connect sheet shows it');
+    await close(s2);
+  });
+
+  await section('review: storage quota, other-tab refresh, stray callback, restricted prev', async () => {
+    const s = await session();
+    const { page, fake } = s;
+    await signIn(page);
+    await pickPlaylist(page, 'pl120');
+    await until(page, () => window.duoamp.spotify.loadStatus.state === 'done');
+    ok(!!(await page.evaluate(() => localStorage.getItem('duoamp.spotify.cache.v1'))), 'track cache written');
+    await page.evaluate(() => {
+      const orig = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (k === 'duoamp.spotify.tokens.v1' && this.getItem('duoamp.spotify.cache.v1')) throw new DOMException('full', 'QuotaExceededError');
+        return orig.call(this, k, v);
+      };
+    });
+    fake.revokeAccessTokens();
+    await page.evaluate(() => window.duoamp.spotify.api.get('/me'));
+    const st = await page.evaluate(() => ({ t: JSON.parse(localStorage.getItem('duoamp.spotify.tokens.v1')).accessToken, c: localStorage.getItem('duoamp.spotify.cache.v1'), d: window.duoamp.diag.list().some((e) => /storage full/.test(e.msg)) }));
+    ok(st.t === fake.issued.access.at(-1) && st.c === null && st.d, 'token write hit the quota -> cache cleared, write retried, logged');
+    await close(s);
+
+    const s2 = await session();
+    await signIn(s2.page);
+    const old = await s2.page.evaluate(() => JSON.parse(localStorage.getItem('duoamp.spotify.tokens.v1')));
+    const minted = s2.fake.mint(old.scope);
+    s2.fake.refreshTokens.delete(old.refreshToken); // another tab rotated it
+    s2.fake.access.delete(old.accessToken);
+    await s2.page.evaluate((m) => {
+      const k = 'duoamp.spotify.tokens.v1';
+      const t = JSON.parse(localStorage.getItem(k));
+      localStorage.setItem(k, JSON.stringify({ ...t, accessToken: m.access, refreshToken: m.refresh, expiresAt: Date.now() + 3600e3 }));
+    }, minted);
+    const r = await s2.page.evaluate(() => window.duoamp.spotify.api.get('/me').then((x) => x.id, (e) => e.kind));
+    ok(r === 'fakeuser' && (await svc(s2.page)).signedIn, `invalid_grant after another tab refreshed -> adopts its tokens (${r})`);
+
+    const n = s2.fake.tokenRequests.length;
+    await s2.page.goto(`${BASE}?test=1&sim=0&code=stalecode&state=stalestate`);
+    await until(s2.page, () => window.duoamp?.spotify?.engine && !window.duoamp.spotify.busy, null, 15000);
+    const v = await svc(s2.page);
+    ok(v.signedIn && !v.authMessage && s2.fake.tokenRequests.length === n && !s2.page.url().includes('code='), 'stale ?code= while signed in (browser Back) is ignored quietly');
+    await close(s2);
+
+    const s3 = await session({ extraDisallows: { skipping_prev: true } });
+    await signIn(s3.page);
+    await pickPlaylist(s3.page, 'pl120');
+    await until(s3.page, () => window.duoamp.spotify.loadStatus.state === 'done');
+    await doubleTapRow(s3.page, 5);
+    await until(s3.page, () => window.duoamp.engine.getState().status === 'playing' && window.duoamp.engine.getState().disallows.prev);
+    await s3.page.evaluate(() => window.duoamp.engine.seek(20));
+    await sleep(4000);
+    const before = s3.fake.sdk.events.length;
+    // aria-disabled only dims it (still pressable by a finger); Playwright needs force for that.
+    await s3.page.tap('.t-prev', { force: true });
+    await sleep(600);
+    const evs = s3.fake.sdk.events.slice(before);
+    ok(evs.includes('cmd:seek') && !evs.includes('cmd:prev'), `PREV past 3 s with skipping_prev disallowed restarts via seek, no previous command (${evs.join(',')})`);
+    await close(s3);
+  });
+
+  await section('review: flat actions shape', async () => {
+    const s = await session({ sdk: 'init_error', actionsFlat: true });
+    const { page } = s;
+    await signIn(page);
+    await until(page, () => window.duoamp.spotify.engine?.mode === 'connect');
+    await pickPlaylist(page, 'pl120');
+    await until(page, () => window.duoamp.spotify.loadStatus.state === 'done');
+    await doubleTapRow(page, 0);
+    await sleep(1200);
+    await page.evaluate(() => window.duoamp.spotify.engine.refreshState());
+    ok(await until(page, () => window.duoamp.engine.getState().disallows.prev, null, 3000), 'disallows read from keys directly under actions');
+    await close(s);
+  });
+
   await section('sign-out returns to demo', async () => {
     const s = await session();
     const { page } = s;
     await signIn(page);
     await pickPlaylist(page, 'pl120');
     await until(page, () => window.duoamp.spotify.loadStatus.state === 'done');
+    await page.evaluate(() => localStorage.setItem('duoamp.spotify.device.v1', 'phone-1'));
     await openLibrary(page);
     await page.tap('.btn-disconnect');
     await until(page, () => !window.duoamp.spotify.signedIn);
     const v = await st(page);
     ok(v.serviceLabel === '' && v.n === 139 && v.sourceLabel === 'DEMO LIBRARY', 'demo engine back');
-    ok((await page.evaluate(() => [localStorage.getItem('duoamp.spotify.tokens.v1'), localStorage.getItem('duoamp.spotify.source.v1')])).every((x) => x === null), 'tokens and last source cleared');
+    ok((await page.evaluate(() => ['tokens.v1', 'source.v1', 'cache.v1', 'device.v1'].map((k) => localStorage.getItem('duoamp.spotify.' + k)))).every((x) => x === null), 'tokens, last source, track cache and remembered device cleared');
+    ok(!!(await page.evaluate(() => localStorage.getItem('duoamp.spotify.clientId'))), 'Client ID kept');
     ok(await page.isVisible('.sheet-library .btn-connect'), 'sheet switches to the connect view');
     ok((await page.evaluate(() => document.querySelectorAll('.pl-row').length)) === 139, 'demo playlist rows back');
     await page.reload();
@@ -777,5 +1084,7 @@ try {
   await browser.close();
   server.stop();
 }
+if (process.env.CHECK_SELFTEST_FAIL) ok(false, 'self-test: forced failure (CHECK_SELFTEST_FAIL)');
 console.log(failures ? `\n${failures} failure(s)` : '\nall Spotify checks passed (against the fake Spotify)');
+process.exitCode = failures ? 1 : 0;
 setTimeout(() => process.exit(failures ? 1 : 0), 100);

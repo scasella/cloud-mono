@@ -1,5 +1,6 @@
 import { SpotifyApiError, type SpotifyApi } from './api';
 import { diag } from './diag';
+import { PREFERRED_DEVICE_KEY } from './storageKeys';
 import { SpotifyEngineBase, type PlayRequest } from './engineBase';
 import { parseDevice, parsePlayerState, type Device, type RepeatMode } from './parse';
 
@@ -9,7 +10,7 @@ const POLL_HIDDEN_MS = 30000;
 const POLL_MAX_BACKOFF_MS = 60000;
 /** Re-read state this long after a command so the UI reconciles quickly. */
 const AFTER_COMMAND_MS = 700;
-const PREFERRED_DEVICE_KEY = 'duoamp.spotify.device.v1';
+
 
 /**
  * Remote control of another Spotify Connect device (typically the Spotify app
@@ -73,7 +74,10 @@ export class ConnectEngine extends SpotifyEngineBase {
       this.failures = 0;
     } catch (e) {
       this.failures++;
-      if (e instanceof SpotifyApiError && e.kind === 'auth') return; // the service signs out
+      // Stop only when actually signed out (the service then swaps to the demo); network
+      // errors, including a failed token refresh, just back off and keep polling.
+      if (!this.api.signedIn) return;
+      if (e instanceof SpotifyApiError) diag.info('engine', `poll failed (${e.kind}); retrying with backoff`);
     }
     this.schedule(this.nextDelay());
   }
@@ -119,7 +123,7 @@ export class ConnectEngine extends SpotifyEngineBase {
       /* ignore */
     }
     return this.run('transfer', async () => {
-      await this.api.put('/me/player', { body: { device_ids: [id], play: this.status === 'playing' } });
+      await this.api.put('/me/player', { command: true, body: { device_ids: [id], play: this.status === 'playing' } });
       this.devices = this.devices.map((d) => ({ ...d, isActive: d.id === id }));
       this.onDevices();
       this.schedule(AFTER_COMMAND_MS);
@@ -133,7 +137,9 @@ export class ConnectEngine extends SpotifyEngineBase {
   /** device_id only when nothing is active: otherwise commands go to the active device. */
   private target(): string | undefined {
     if (this.activeDevice()) return undefined;
-    const pref = this.devices.find((d) => d.id === this.preferredDeviceId) ?? this.devices[0];
+    // Restricted devices reject Web API commands; never fall back to one.
+    const usable = this.devices.filter((d) => !d.isRestricted);
+    const pref = usable.find((d) => d.id === this.preferredDeviceId) ?? usable[0];
     return pref?.id;
   }
 
@@ -146,28 +152,28 @@ export class ConnectEngine extends SpotifyEngineBase {
   }
 
   protected tPlay(req: PlayRequest | null) {
-    return this.cmd(() => this.api.put('/me/player/play', { query: { device_id: this.target() }, body: req ?? undefined }));
+    return this.cmd(() => this.api.put('/me/player/play', { command: true, query: { device_id: this.target() }, body: req ?? undefined }));
   }
   protected tPause() {
-    return this.cmd(() => this.api.put('/me/player/pause'));
+    return this.cmd(() => this.api.put('/me/player/pause', { command: true }));
   }
   protected tNext() {
-    return this.cmd(() => this.api.post('/me/player/next'));
+    return this.cmd(() => this.api.post('/me/player/next', { command: true }));
   }
   protected tPrev() {
-    return this.cmd(() => this.api.post('/me/player/previous'));
+    return this.cmd(() => this.api.post('/me/player/previous', { command: true }));
   }
   protected tSeek(ms: number) {
-    return this.cmd(() => this.api.put('/me/player/seek', { query: { position_ms: ms } }));
+    return this.cmd(() => this.api.put('/me/player/seek', { command: true, query: { position_ms: ms } }));
   }
   protected tVolume(v: number) {
-    return this.cmd(() => this.api.put('/me/player/volume', { query: { volume_percent: Math.round(v * 100) } }));
+    return this.cmd(() => this.api.put('/me/player/volume', { command: true, query: { volume_percent: Math.round(v * 100) } }));
   }
   protected tShuffle(on: boolean) {
-    return this.cmd(() => this.api.put('/me/player/shuffle', { query: { state: on } }));
+    return this.cmd(() => this.api.put('/me/player/shuffle', { command: true, query: { state: on } }));
   }
   protected tRepeat(mode: RepeatMode) {
-    return this.cmd(() => this.api.put('/me/player/repeat', { query: { state: mode } }));
+    return this.cmd(() => this.api.put('/me/player/repeat', { command: true, query: { state: mode } }));
   }
 
   describe() {

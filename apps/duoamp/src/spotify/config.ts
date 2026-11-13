@@ -5,8 +5,14 @@ export const API_ORIGIN = 'https://api.spotify.com';
 export const API_BASE = `${API_ORIGIN}/v1`;
 export const SDK_URL = 'https://sdk.scdn.co/spotify-player.js';
 
+/**
+ * The Web Playback SDK guide: "We need permission for streaming, user-read-email
+ * and user-read-private for the Web Player SDK." Without user-read-email the SDK
+ * reports authentication_error ("Invalid token scopes").
+ */
 export const SCOPES = [
   'streaming',
+  'user-read-email',
   'user-read-playback-state',
   'user-modify-playback-state',
   'user-read-currently-playing',

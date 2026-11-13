@@ -106,8 +106,9 @@ HTTPS site.
   `Retry-After` shared across requests (exponential backoff if the header is not
   readable), paging with `limit=50` following `next`.
 - **Library** (`src/spotify/library.ts`): playlists from `/me/playlists`,
-  tracks from `/playlists/{id}/items` (falls back to the old `/tracks` + `track`
-  shape), Liked Songs from `/me/tracks`, `fields` to keep responses small, a
+  tracks from `/playlists/{id}/items`, trying in order: `fields` for the new
+  `item` key, `fields` for the deprecated `track` alias, no `fields` filter, and
+  only then the old `/tracks` path; each fallback restarts the list from the top, Liked Songs from `/me/tracks`, `fields` to keep responses small, a
   `snapshot_id` cache in `localStorage`, progressive loading. Null entries,
   local files and episodes are skipped. Playlists you neither own nor
   collaborate on are shown dimmed and explain the 403 if picked.
@@ -138,6 +139,45 @@ HTTPS site.
   SDK state, recent engine/API events and errors with timestamps, viewport,
   posture, safe-area insets, standalone mode and user agent, with COPY REPORT.
   Tokens, the PKCE verifier and the auth code are never logged or reported.
+
+### Storage and privacy
+
+- Tokens, the Client ID, the last playlist and a small track cache are kept in
+  `localStorage` of the origin the app is served from. On GitHub Pages that
+  origin is `https://scasella.github.io`, which is **shared with every other
+  Pages site under the same account** (`scasella.github.io/<other-repo>/`): any
+  page there can read DuoAmp's tokens. A custom domain gives the app its own
+  origin and isolates them.
+- Safari (with Intelligent Tracking Prevention) deletes a site's script-writable
+  storage, `localStorage` included, after seven days of Safari use without
+  interaction with that site; you then sign in again. Home-screen web apps keep
+  their own day counter and, per WebKit, are not expected to have their data
+  deleted (WebKit blog, "Full Third-Party Cookie Blocking and More", March 2020).
+- DISCONNECT removes the tokens, the last playlist, the track cache and the
+  remembered device. It keeps the Client ID and the mode choice.
+
+### Known limits
+
+- **Liked Songs** play as a list of up to 100 track URIs starting at the tapped
+  row, so NEXT, SHUFFLE and REPEAT stop at the edge of that window. Spotify's
+  start-playback reference lists only albums, artists and playlists as
+  contexts (`offset` only for albums and playlists); a Liked Songs/collection
+  context is not documented, so it is not used.
+- **Scopes**: the Web Playback SDK needs `streaming`, `user-read-email` and
+  `user-read-private`. Sign-ins made before `user-read-email` was added lack it:
+  the app notices on load and offers RECONNECT in the library sheet (until
+  then it falls back to remote control).
+- **iOS**: playback moved to DuoAmp from another device arrives paused (Spotify:
+  "The playback does not start automatically after transferring playback"); the
+  marquee asks for a tap on PLAY. Only failures right after a PLAY or row tap
+  here count towards giving up on in-browser playback.
+- The SDK state's `timestamp` (used to place a stale position correctly) and
+  `linked_from` (relinked tracks) are observed fields, not documented ones.
+- Player commands that wait more than 5 s in the queue (after a hang or a rate
+  limit) are dropped rather than replayed late; one that does not settle in
+  10 s is abandoned. While Spotify asks to wait longer than 30 s (3 s for player
+  commands), requests fail at once with "try again in N s".
+- KBPS/KHZ/MONO/STEREO, the EQ and the visualiser are not real audio data (see above).
 
 ### Testing against a fake
 

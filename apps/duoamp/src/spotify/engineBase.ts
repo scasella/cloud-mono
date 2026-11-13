@@ -41,6 +41,12 @@ const HOLD_MS = 3500;
 /** Liked Songs have no usable context; playback gets this many URIs from the tapped row on. */
 export const URI_WINDOW = 100;
 const PREV_RESTART_S = 3;
+/** A transport call that has not settled after this long is abandoned so later commands are not blocked. */
+export const COMMAND_TIMEOUT_MS = 10_000;
+/** A queued command that waited longer than this to start is dropped instead of replayed late. */
+export const COMMAND_STALE_MS = 5_000;
+
+class CommandTimeout extends Error {}
 const TICK_MS = 500;
 
 type HoldKey = 'status' | 'track' | 'position' | 'shuffle' | 'repeat';
@@ -92,6 +98,10 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
   private pendingVolume: number | null = null;
   protected disposed = false;
   lastNotice: EngineNotice | null = null;
+  /** performance.now() of the last play the user asked for here (PLAY or a row double-tap). */
+  protected lastPlayRequestAt = -Infinity;
+  droppedCommands = 0;
+  private lastDropNotice = -Infinity;
 
   constructor(protected api: SpotifyApi, opts: { volume: number; caps: Capabilities }) {
     this.volume = opts.volume;
@@ -116,7 +126,7 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
   /** Is there playback on the device we control (so resume/pause apply)? */
   protected abstract hasActivePlayback(): boolean;
   abstract describe(): Record<string, string>;
-  userGesture() {}
+  userGesture(_kind?: string) {}
 
   // ---- state ----------------------------------------------------------------
 
@@ -391,13 +401,35 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
 
   /** Run a transport call after all earlier ones; errors become notices + a resync. */
   protected run(label: string, fn: () => Promise<void>): Promise<void> {
+    const queuedAt = performance.now();
     const p = this.queue.then(async () => {
       if (this.disposed) return;
+      const waited = performance.now() - queuedAt;
+      if (waited > COMMAND_STALE_MS) {
+        // Replaying it now (after a hang or a rate-limit block) would fire a burst of stale commands.
+        this.droppedCommands++;
+        diag.warn('engine', `${this.mode} ${label} dropped after waiting ${Math.round(waited)} ms`);
+        if (performance.now() - this.lastDropNotice > 3000) {
+          this.lastDropNotice = performance.now();
+          this.notice({ level: 'warn', text: 'SPOTIFY WAS BUSY: SKIPPED A COMMAND, TRY AGAIN', code: 'command_dropped' });
+        }
+        this.clearHolds();
+        void this.refreshState().catch(() => undefined);
+        return;
+      }
+      let timer: number | undefined;
       try {
-        await fn();
+        await Promise.race([
+          fn(),
+          new Promise<never>((_, reject) => {
+            timer = window.setTimeout(() => reject(new CommandTimeout()), COMMAND_TIMEOUT_MS);
+          }),
+        ]);
         diag.info('engine', `${this.mode} ${label} ok`);
       } catch (e) {
         this.onCommandError(label, e);
+      } finally {
+        clearTimeout(timer);
       }
     });
     this.queue = p;
@@ -408,6 +440,9 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
     this.holds.clear();
     if (e instanceof SpotifyApiError) {
       this.notice({ level: 'error', text: e.message, code: e.kind });
+    } else if (e instanceof CommandTimeout) {
+      diag.error('engine', `${this.mode} ${label} timed out after ${COMMAND_TIMEOUT_MS} ms`);
+      this.notice({ level: 'error', text: 'SPOTIFY DID NOT RESPOND', code: 'timeout' });
     } else {
       const msg = e instanceof Error ? e.message : String(e);
       diag.error('engine', `${this.mode} ${label} failed: ${msg}`);
@@ -430,6 +465,7 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
       return this.seek(0);
     }
     if (this.disallows.resume && this.hasActivePlayback()) return this.refuse('PLAY');
+    this.lastPlayRequestAt = performance.now();
     if (!this.hasActivePlayback() && this.tracks.length) {
       return this.playIndex(this.index >= 0 ? this.index : 0);
     }
@@ -485,6 +521,11 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
 
   async prev() {
     if (this.getPosition() > PREV_RESTART_S && this.status === 'playing') {
+      if (this.disallows.prev) {
+        // Previous is disallowed: restarting is still a seek, which may be allowed.
+        if (this.disallows.seek || !this.caps.seek) return this.refuse('PREVIOUS');
+        return this.seek(0);
+      }
       // Spotify restarts the track too; keep the row.
       this.optimisticRestart();
     } else {
@@ -537,6 +578,7 @@ export abstract class SpotifyEngineBase implements PlayerEngine {
       req = { uris: this.tracks.slice(index, index + URI_WINDOW).map((x) => x.uri!).filter(Boolean) };
     }
     this.stoppedLocal = false;
+    this.lastPlayRequestAt = performance.now();
     this.index = index;
     this.requestedIndex = index;
     this.current = t;

@@ -1,6 +1,7 @@
 import type { Track } from '../engine/types';
 import { SpotifyApiError, type SpotifyApi } from './api';
 import { diag } from './diag';
+import { TRACK_CACHE_KEY } from './storageKeys';
 import type { SourceInfo } from './engineBase';
 import { pageLacksTracks, parseEntry, parsePlaylist, type PlaylistInfo } from './parse';
 
@@ -10,9 +11,10 @@ const FIELDS_NEW = `next,total,offset,items(is_local,item(${TRACK_FIELDS}))`;
 /** Old shape: entries carry `track`. */
 const FIELDS_OLD = `next,total,offset,items(is_local,track(${TRACK_FIELDS}))`;
 
-const CACHE_KEY = 'duoamp.spotify.cache.v1';
+const CACHE_KEY = TRACK_CACHE_KEY;
 const CACHE_MAX_ENTRIES = 4;
-const CACHE_MAX_CHARS = 1_500_000;
+/** ~1.2 MB as UTF-16, far below Safari's ~5 MB localStorage quota, leaving room for tokens and prefs. */
+const CACHE_MAX_CHARS = 600_000;
 
 export interface Profile {
   id: string;
@@ -20,6 +22,8 @@ export interface Profile {
 }
 
 export interface LoadProgress {
+  /** Increments when a fallback restarts the list from the top; consumers must replace, not append. */
+  attempt: number;
   tracks: Track[];
   positions: number[];
   /** Total entries Spotify reports (including ones we skip). */
@@ -84,8 +88,8 @@ function fromRows(rows: Row[]): { tracks: Track[]; positions: number[] } {
 }
 
 export class Library {
-  /** Which playlist-items path/shape works for this app (learned on first use). */
-  private itemsShape: 'new' | 'old' = 'new';
+  /** Which playlist-items attempt works for this app (learned on first use). */
+  private itemsAttempt = 0;
   private memo = new Map<string, { snapshot: string; tracks: Track[]; positions: number[] }>();
 
   constructor(private api: SpotifyApi) {}
@@ -118,6 +122,11 @@ export class Library {
     return parsePlaylist(body);
   }
 
+  /** Forget cached tracks (DISCONNECT). The localStorage copy is removed by the caller. */
+  clearCache() {
+    this.memo.clear();
+  }
+
   cached(id: string, snapshot: string | undefined) {
     if (!snapshot) return null;
     const m = this.memo.get(id);
@@ -147,16 +156,26 @@ export class Library {
       const hit = this.cached(src.id, src.snapshotId);
       if (hit) {
         diag.info('api', `playlist served from cache (snapshot match, ${hit.tracks.length} tracks)`);
-        const p = { tracks: hit.tracks, positions: hit.positions, total: hit.tracks.length, done: true };
+        const p = { attempt: 0, tracks: hit.tracks, positions: hit.positions, total: hit.tracks.length, done: true };
         onProgress(p);
         return p;
       }
     }
-    const tracks: Track[] = [];
-    const positions: number[] = [];
+    let tracks: Track[] = [];
+    let positions: number[] = [];
     let total = 0;
     let skipped = 0;
     let pos = 0;
+    let attempt = 0;
+    // A fallback starts over: fresh arrays, so rows from a failed attempt are never duplicated.
+    const restart = () => {
+      tracks = [];
+      positions = [];
+      total = 0;
+      skipped = 0;
+      pos = 0;
+      attempt++;
+    };
     const handle = (items: unknown[], pageTotal: number) => {
       total = pageTotal;
       for (const e of items) {
@@ -167,7 +186,7 @@ export class Library {
         } else skipped++;
         pos++;
       }
-      onProgress({ tracks: tracks.slice(), positions: positions.slice(), total, done: false });
+      onProgress({ attempt, tracks: tracks.slice(), positions: positions.slice(), total, done: false });
     };
 
     if (src.kind === 'liked') {
@@ -176,10 +195,10 @@ export class Library {
         handle(items, pg.total);
       }, signal);
     } else {
-      await this.loadPlaylistItems(src.id, handle, signal);
+      await this.loadPlaylistItems(src.id, handle, restart, signal);
     }
     if (skipped) diag.info('api', `skipped ${skipped} unplayable entries (local files, episodes, removed)`);
-    const done = { tracks, positions, total, done: true };
+    const done = { attempt, tracks, positions, total, done: true };
     if (!signal.aborted) {
       if (src.kind === 'playlist') this.store(src.id, src.snapshotId, tracks, positions);
       onProgress(done);
@@ -187,29 +206,48 @@ export class Library {
     return done;
   }
 
-  /** GET /playlists/{id}/items (new); falls back to /tracks + `track` (old shape) when needed. */
-  private async loadPlaylistItems(id: string, handle: (items: unknown[], total: number) => void, signal: { aborted: boolean }) {
+  /**
+   * GET /playlists/{id}/items. Attempts, in order (the last one that worked goes first next time):
+   *   1. /items with the new-shape `fields` (entries carry `item`)
+   *   2. /items with the old-shape `fields` (entries carry the deprecated `track` alias)
+   *   3. /items with no `fields` at all (in case the filter is not honoured or rejected)
+   *   4. /tracks with the old-shape `fields` (removed for new apps; last resort for old ones)
+   * A page whose entries carry neither `item` nor `track`, a 404 or a 400 moves on to the next
+   * attempt, which starts over from offset 0.
+   */
+  private async loadPlaylistItems(id: string, handle: (items: unknown[], total: number) => void, restart: () => void, signal: { aborted: boolean }) {
     const enc = encodeURIComponent(id);
-    const run = (shape: 'new' | 'old') =>
-      this.api.paginate<unknown>(`/playlists/${enc}/${shape === 'new' ? 'items' : 'tracks'}`, { fields: shape === 'new' ? FIELDS_NEW : FIELDS_OLD }, (items, pg) => {
-        if (signal.aborted) return false;
-        if (pg.offset === 0 && pageLacksTracks(items)) throw new ShapeMismatch();
-        handle(items, pg.total);
-      }, signal);
-    const order: Array<'new' | 'old'> = this.itemsShape === 'new' ? ['new', 'old'] : ['old', 'new'];
-    for (let i = 0; i < order.length; i++) {
+    const all = ITEM_ATTEMPTS;
+    const order = [this.itemsAttempt, ...all.map((_, i) => i).filter((i) => i !== this.itemsAttempt)];
+    let lastErr: unknown = null;
+    for (let k = 0; k < order.length; k++) {
+      const a = all[order[k]];
+      if (k > 0) restart();
       try {
-        await run(order[i]);
-        if (this.itemsShape !== order[i]) diag.info('api', `playlist items: using the ${order[i]} response shape`);
-        this.itemsShape = order[i];
+        await this.api.paginate<unknown>(`/playlists/${enc}/${a.path}`, a.fields ? { fields: a.fields } : {}, (items, pg) => {
+          if (signal.aborted) return false;
+          if (pageLacksTracks(items)) throw new ShapeMismatch();
+          handle(items, pg.total);
+        }, signal);
+        if (this.itemsAttempt !== order[k]) diag.info('api', `playlist items: using ${a.label}`);
+        this.itemsAttempt = order[k];
         return;
       } catch (e) {
-        const retry = i === 0 && (e instanceof ShapeMismatch || (e instanceof SpotifyApiError && e.kind === 'not_found'));
+        lastErr = e;
+        const retry = e instanceof ShapeMismatch || (e instanceof SpotifyApiError && (e.kind === 'not_found' || e.kind === 'bad_request'));
         if (!retry) throw e;
-        diag.info('api', `playlist items: ${order[i]} shape unavailable, trying ${order[1 - i]}`);
+        diag.info('api', `playlist items: ${a.label} did not work (${e instanceof ShapeMismatch ? 'no track objects' : (e as SpotifyApiError).status})`);
       }
     }
+    throw lastErr instanceof ShapeMismatch ? new SpotifyApiError('not_found', 404, 'SPOTIFY RETURNED NO TRACKS FOR THIS PLAYLIST') : lastErr;
   }
 }
+
+const ITEM_ATTEMPTS: Array<{ path: 'items' | 'tracks'; fields: string | null; label: string }> = [
+  { path: 'items', fields: FIELDS_NEW, label: '/items (item)' },
+  { path: 'items', fields: FIELDS_OLD, label: '/items (track alias)' },
+  { path: 'items', fields: null, label: '/items (no fields filter)' },
+  { path: 'tracks', fields: FIELDS_OLD, label: '/tracks (old API)' },
+];
 
 class ShapeMismatch extends Error {}

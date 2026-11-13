@@ -61,8 +61,8 @@ export class SwitchableEngine implements PlayerEngine {
     this.noticeListeners.add(l);
     return () => this.noticeListeners.delete(l);
   }
-  userGesture() {
-    this.inner.userGesture();
+  userGesture(kind?: string) {
+    this.inner.userGesture(kind);
   }
   play() {
     return this.inner.play();

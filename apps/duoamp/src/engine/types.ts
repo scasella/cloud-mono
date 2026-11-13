@@ -110,7 +110,7 @@ export interface PlayerEngine {
    * Called synchronously from inside user-gesture handlers (pointerup, keydown).
    * Engines that need a gesture to unlock audio do it here; must be cheap.
    */
-  userGesture(): void;
+  userGesture(kind?: string): void;
 
   // Commands resolve when the engine has applied them (optimistically) and sent
   // them on; failures are reported through notices, never thrown.

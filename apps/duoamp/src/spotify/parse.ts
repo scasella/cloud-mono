@@ -65,7 +65,8 @@ export function parseEntry(e: unknown): Track | null {
 
 /** True when a page of entries carried neither `item` nor `track` objects (wrong `fields` for this API shape). */
 export function pageLacksTracks(items: unknown[]): boolean {
-  return items.length > 0 && items.every((e) => isObj(e) && !isObj(e.item) && !isObj(e.track) && e.is_local !== true);
+  // Local-file entries still carry an object under item/track, so they count as present.
+  return items.length > 0 && !items.some((e) => isObj(e) && (isObj(e.item) || isObj(e.track)));
 }
 
 export interface PlaylistInfo {
@@ -163,7 +164,9 @@ function uriList(o: Obj): string[] {
 export function parsePlayerState(o: unknown, now = performance.now()): RemoteState | null {
   if (!isObj(o)) return null;
   const item = isObj(o.item) ? o.item : null;
-  const dis = isObj(o.actions) && isObj(o.actions.disallows) ? o.actions.disallows : {};
+  // `actions.disallows.{...}` per the reference; some responses put the keys directly under `actions`.
+  const actions = isObj(o.actions) ? o.actions : {};
+  const dis = isObj(actions.disallows) ? { ...actions, ...actions.disallows } : actions;
   const ctx = isObj(o.context) ? str(o.context.uri) ?? null : null;
   const rep = str(o.repeat_state);
   return {
@@ -199,6 +202,12 @@ export function parseSdkState(o: unknown, now = performance.now()): RemoteState 
   const rm = num(o.repeat_mode) ?? 0;
   const dur = num(o.duration) ?? (cur ? num(cur.duration_ms) : undefined) ?? 0;
   const track = cur ? parseTrack({ ...cur, duration_ms: num(cur.duration_ms) ?? dur }) : null;
+  // The SDK state can be older than "now" (getCurrentState returns the last known state).
+  // When it carries an epoch-ms `timestamp` (observed, undocumented), the position is as
+  // of that moment; use it so a resync never snaps the position backwards.
+  const ts = num(o.timestamp);
+  const ageMs = ts !== undefined ? Date.now() - ts : NaN;
+  const sampledAt = Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 3600_000 ? now - ageMs : now;
   return {
     track,
     uris: cur ? uriList(cur) : [],
@@ -217,6 +226,6 @@ export function parseSdkState(o: unknown, now = performance.now()): RemoteState 
       shuffle: dis.toggling_shuffle === true,
       repeat: dis.toggling_repeat_context === true,
     },
-    sampledAt: now,
+    sampledAt,
   };
 }

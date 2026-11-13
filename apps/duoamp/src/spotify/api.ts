@@ -32,6 +32,12 @@ export interface RequestOpts {
   body?: unknown;
   /** Max automatic retries after 429 (default 3). */
   max429Retries?: number;
+  /**
+   * Player command: wait at most a few seconds for a rate-limit block (a late
+   * pause/next is worse than a failed one), and never longer than the engine's
+   * command timeout.
+   */
+  command?: boolean;
 }
 
 type Fetch = typeof fetch;
@@ -39,6 +45,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Longest Retry-After we wait through automatically; beyond this the error is surfaced. */
 const MAX_AUTO_WAIT_S = 30;
+const COMMAND_MAX_WAIT_S = 3;
 
 /** Strip ids out of a path for logging: /playlists/abc/items -> /playlists/{id}/items */
 function logPath(path: string): string {
@@ -53,6 +60,8 @@ function logPath(path: string): string {
 export class SpotifyApi {
   /** ms epoch before which no request is sent (after a 429). */
   private blockedUntil = 0;
+  /** Spotify's reason for the current block (e.g. QUOTA_EXCEEDED), reused by fast failures. */
+  private blockedReason: string | undefined;
   lastErrors: Array<{ t: number; status: number; path: string; reason?: string }> = [];
   requestCount = 0;
 
@@ -82,6 +91,13 @@ export class SpotifyApi {
     let n429 = 0;
     for (;;) {
       const wait = this.blockedUntil - Date.now();
+      const maxWait = (opts.command ? COMMAND_MAX_WAIT_S : MAX_AUTO_WAIT_S) * 1000;
+      if (wait > maxWait) {
+        // Blocked for longer than we are willing to hold a request: fail fast instead of piling up.
+        const secs = Math.ceil(wait / 1000);
+        const quota = this.blockedReason === 'QUOTA_EXCEEDED';
+        throw new SpotifyApiError('rate_limited', 429, quota ? `SPOTIFY QUOTA EXCEEDED, TRY AGAIN IN ${secs} S` : `SPOTIFY IS RATE LIMITING, TRY AGAIN IN ${secs} S`, this.blockedReason ?? 'BLOCKED', path, secs);
+      }
       if (wait > 0) await sleep(wait);
       let token: string;
       try {
@@ -123,10 +139,11 @@ export class SpotifyApi {
         const raw = res.headers.get('Retry-After');
         const ra = raw === null || raw.trim() === '' ? NaN : Number(raw);
         const secs = Number.isFinite(ra) && ra >= 0 ? ra : Math.min(MAX_AUTO_WAIT_S, 2 ** (n429 + 1));
+        if (Date.now() + secs * 1000 >= this.blockedUntil) this.blockedReason = reason;
         this.blockedUntil = Math.max(this.blockedUntil, Date.now() + secs * 1000);
         this.record(429, path, reason ?? `retry-after ${secs}s`);
         diag.warn('api', `429 on ${method} ${logPath(path)}; Retry-After ${secs}s${reason ? ` (${reason})` : ''}`);
-        if (n429 < (opts.max429Retries ?? 3) && secs <= MAX_AUTO_WAIT_S) {
+        if (n429 < (opts.max429Retries ?? 3) && secs <= (opts.command ? COMMAND_MAX_WAIT_S : MAX_AUTO_WAIT_S)) {
           n429++;
           continue;
         }
@@ -165,7 +182,17 @@ export class SpotifyApi {
     if (this.lastErrors.length > 20) this.lastErrors.shift();
   }
 
+  /** True while there are tokens; false once signed out (refresh token expired/revoked, or DISCONNECT). */
+  get signedIn() {
+    return this.auth.signedIn;
+  }
+
   private authError(e: unknown, path: string): SpotifyApiError {
+    // A refresh that failed for lack of network is a network problem, not a sign-in problem.
+    if (e instanceof AuthError && e.code === 'network') {
+      this.record(0, path, 'token refresh: network');
+      return new SpotifyApiError('network', 0, 'NETWORK ERROR', 'token_refresh', path);
+    }
     const msg = e instanceof AuthError ? e.message : 'NOT SIGNED IN';
     return new SpotifyApiError('auth', 401, msg, e instanceof AuthError ? e.code : undefined, path);
   }

@@ -112,8 +112,27 @@ export class FakeSpotify {
       exposeRetryAfter: true,
       rateLimit: null, // { match: RegExp, times: n, retryAfter: s, reason? }
       phone: { present: true, active: false, supportsVolume: false },
+      // Scopes the user's consent does NOT grant (Spotify returns the granted ones in `scope`).
+      denyScopes: [],
+      // /items with a `fields` parameter answers 400 (filter not supported).
+      fields400: false,
+      // One-shot failures: [{ match: RegExp (path), offset?: number, status }]
+      failOnce: [],
+      // Flat `actions` (keys directly under actions) instead of actions.disallows.
+      actionsFlat: false,
+      // Next N token requests fail at the network level.
+      tokenNetworkFailures: 0,
+      // SDK commands that never settle (e.g. ['pause']).
+      sdkHang: [],
+      // After the first connect, every reconnect reports authentication_error.
+      sdkAuthFailOnReconnect: false,
+      // getCurrentState() returns a snapshot this old (ms), with a matching timestamp.
+      sdkStaleMs: 0,
+      // A restricted device listed first.
+      restrictedDevice: false,
       ...opts,
     };
+    this.scopeOf = new Map(); // access or refresh token -> granted scope string
     this.log = [];
     this.codes = new Map();
     this.access = new Map(); // token -> expiresAt (ms)
@@ -130,6 +149,7 @@ export class FakeSpotify {
     }
     this.liked = Array.from({ length: 60 }, (_, i) => ({ added_at: '2026-01-01T00:00:00Z', track: makeTrack(300 + i, 'l') }));
     this.devices = [];
+    if (this.cfg.restrictedDevice) this.devices.push({ id: 'tv-1', is_active: false, is_private_session: false, is_restricted: true, name: 'Restricted TV', type: 'TV', volume_percent: 50, supports_volume: false });
     if (this.cfg.phone.present) this.addPhone(this.cfg.phone.active);
     this.player = null; // { deviceId, contextUri, queue:[track], idx, posMs, at, paused, shuffle, repeat }
     this.sdk = { page: null, deviceId: null, activated: false, events: [] };
@@ -159,6 +179,11 @@ export class FakeSpotify {
     this.addPhone(true);
     for (const d of this.devices) d.is_active = d.id === 'phone-1';
     this.player = { deviceId: 'phone-1', contextUri: null, queue: [track], idx: 0, posMs: 12000, at: Date.now(), paused: false, shuffle: false, repeat: 'off' };
+  }
+
+  /** The SDK player drops offline (network blip): emits not_ready; a later connect() brings it back. */
+  sdkGoOffline() {
+    this.sdkEmit('not_ready', { device_id: this.sdk.deviceId });
   }
 
   revokeAccessTokens() {
@@ -230,6 +255,11 @@ export class FakeSpotify {
       return route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><title>Fake Spotify consent</title><script>location.replace(${JSON.stringify(target)})</script>` });
     }
     if (url.pathname === '/api/token' && req.method() === 'POST') {
+      if (this.cfg.tokenNetworkFailures > 0) {
+        this.cfg.tokenNetworkFailures--;
+        this.tokenRequests.push({ grant: 'network-failure', at: Date.now() });
+        return route.abort('internetdisconnected');
+      }
       const form = new URLSearchParams(req.postData() ?? '');
       const grant = form.get('grant_type');
       this.tokenRequests.push({ grant, at: Date.now(), contentType: req.headers()['content-type'] });
@@ -246,27 +276,43 @@ export class FakeSpotify {
         this.issued.verifiers.push(verifier);
         const challenge = b64url(createHash('sha256').update(verifier).digest());
         if (challenge !== rec.challenge) return err('invalid_grant', 'code_verifier was incorrect');
-        return this.issueTokens(route, rec.scope, true);
+        const granted = (rec.scope ?? '').split(' ').filter((x) => x && !this.cfg.denyScopes.includes(x)).join(' ');
+        return this.issueTokens(route, granted, true);
       }
       if (grant === 'refresh_token') {
         const rt = form.get('refresh_token');
         if (this.cfg.refreshInvalidGrant || !this.refreshTokens.has(rt)) return err('invalid_grant', 'Refresh token revoked');
         if (this.cfg.rotateRefresh) this.refreshTokens.delete(rt);
-        return this.issueTokens(route, null, this.cfg.rotateRefresh);
+        return this.issueTokens(route, this.scopeOf.get(rt) ?? '', this.cfg.rotateRefresh);
       }
       return err('unsupported_grant_type', 'unsupported');
     }
     return route.fulfill({ status: 404, body: 'not found' });
   }
 
-  issueTokens(route, scope, withRefresh) {
+  /** Issue a token set directly (e.g. "another tab refreshed"). */
+  mint(scope) {
+    const access = `fakeaccess${rnd(60)}`;
+    const refresh = `fakerefresh${rnd(60)}`;
+    this.access.set(access, Date.now() + this.cfg.expiresIn * 1000);
+    this.refreshTokens.add(refresh);
+    this.scopeOf.set(access, scope);
+    this.scopeOf.set(refresh, scope);
+    this.issued.access.push(access);
+    this.issued.refresh.push(refresh);
+    return { access, refresh };
+  }
+
+  issueTokens(route, scope, withRefresh, prevRefresh) {
     const access = `fakeaccess${rnd(60)}`;
     this.access.set(access, Date.now() + this.cfg.expiresIn * 1000);
+    this.scopeOf.set(access, scope);
     this.issued.access.push(access);
-    const body = { access_token: access, token_type: 'Bearer', expires_in: this.cfg.expiresIn, scope: scope ?? 'streaming user-read-playback-state' };
+    const body = { access_token: access, token_type: 'Bearer', expires_in: this.cfg.expiresIn, scope };
     if (withRefresh) {
       const refresh = `fakerefresh${rnd(60)}`;
       this.refreshTokens.add(refresh);
+      this.scopeOf.set(refresh, scope);
       this.issued.refresh.push(refresh);
       body.refresh_token = refresh;
     }
@@ -309,6 +355,12 @@ export class FakeSpotify {
       rl.times--;
       entry.status = 429;
       return this.apiError(route, 429, 'API rate limit exceeded', rl.reason, { 'Retry-After': String(rl.retryAfter) });
+    }
+    const fo = this.cfg.failOnce.findIndex((f) => f.match.test(path) && (f.offset === undefined || Number(q.offset ?? 0) === f.offset));
+    if (fo >= 0) {
+      const f = this.cfg.failOnce.splice(fo, 1)[0];
+      entry.status = f.status;
+      return this.apiError(route, f.status, `Injected ${f.status}`);
     }
     try {
       const res = this.handle(req.method(), path, q, body);
@@ -361,10 +413,25 @@ export class FakeSpotify {
     };
   }
 
+  /**
+   * New shape: `item`, plus the deprecated `track` alias (the reference lists both).
+   * 'alias': only `track` (an /items endpoint still answering in the old shape). 'old': only `track`.
+   */
   entryShape(e) {
-    if (this.cfg.shape === 'new') return e;
     const { item, ...rest } = e;
+    if (this.cfg.shape === 'new') return { ...rest, item, track: item };
     return { ...rest, track: item };
+  }
+
+  /** Honour the `fields` filter for which entry keys come back (enough to tell item( from track( ). */
+  applyFields(entry, fields) {
+    if (!fields) return entry;
+    const inner = /items\((.*)\)\s*$/.exec(fields)?.[1] ?? '';
+    const out = {};
+    if (/(^|,)is_local/.test(inner) && 'is_local' in entry) out.is_local = entry.is_local;
+    if (/(^|,)item\(/.test(inner) && 'item' in entry) out.item = entry.item;
+    if (/(^|,)track\(/.test(inner) && 'track' in entry) out.track = entry.track;
+    return out;
   }
 
   handle(method, path, q, body) {
@@ -386,7 +453,8 @@ export class FakeSpotify {
       if (this.cfg.shape === 'old' && wantItems) return { status: 404, error: 'Service not found' };
       if (this.cfg.shape === 'new' && !wantItems) return { status: 404, error: 'Service not found' };
       if (p.owner.id !== ME.id && !p.collaborative) return { status: 403, error: 'Forbidden' };
-      return this.page(p.entries.map((e) => this.entryShape(e)), q, `/playlists/${p.id}/${m[2]}`);
+      if (this.cfg.fields400 && wantItems && q.fields) return { status: 400, error: 'Invalid fields' };
+      return this.page(p.entries.map((e) => this.applyFields(this.entryShape(e), q.fields)), q, `/playlists/${p.id}/${m[2]}`);
     }
     if (path.startsWith('/me/player')) return this.playerApi(method, path, q, body);
     return { status: 404, error: `No fake for ${method} ${path}` };
@@ -479,7 +547,11 @@ export class FakeSpotify {
         }
       }
       if (old === this.sdk.deviceId && id !== old) this.pushSdk(true);
-      else this.pushSdk();
+      else {
+        // SDK docs: on iOS "the playback does not start automatically after transferring playback".
+        if (id === this.sdk.deviceId) this.startOnSdkMaybe();
+        this.pushSdk();
+      }
       return { status: 204 };
     }
     if (method === 'PUT' && path === '/me/player/play') {
@@ -549,7 +621,7 @@ export class FakeSpotify {
       is_playing: !p.paused,
       item: t && (({ linked_from, ...rest }) => rest)(t),
       currently_playing_type: 'track',
-      actions: { disallows: this.disallows() },
+      actions: this.cfg.actionsFlat ? { ...this.disallows() } : { disallows: this.disallows() },
     };
   }
 
@@ -564,6 +636,7 @@ export class FakeSpotify {
       ...(x.linked_from ? { linked_from: x.linked_from } : {}),
     });
     return {
+      timestamp: Date.now(),
       context: { uri: p.contextUri, metadata: {} },
       disallows: this.disallows(),
       paused: p.paused,
@@ -607,11 +680,25 @@ export class FakeSpotify {
     if (cmd === 'register') {
       const exp = this.access.get(arg.token);
       if (!exp || exp < Date.now()) return { error: 'authentication_error' };
+      // The SDK guide: streaming, user-read-email and user-read-private are required.
+      const scopes = (this.scopeOf.get(arg.token) ?? '').split(' ');
+      if (!['streaming', 'user-read-email', 'user-read-private'].every((x) => scopes.includes(x))) return { error: 'authentication_error' };
+      this.sdk.connects = (this.sdk.connects ?? 0) + 1;
+      if (this.cfg.sdkAuthFailOnReconnect && this.sdk.connects > 1) return { error: 'authentication_error' };
       this.sdk.page = page;
-      this.sdk.deviceId = `sdkdevice${rnd(10)}`;
+      if (this.sdk.deviceId && this.devices.some((d) => d.id === this.sdk.deviceId)) return { device_id: this.sdk.deviceId };
+      this.sdk.deviceId = this.sdk.deviceId ?? `sdkdevice${rnd(10)}`;
+      this.sdk.events.push('register');
       this.devices = this.devices.filter((d) => d.type !== 'Computer');
       this.devices.push({ id: this.sdk.deviceId, is_active: false, is_private_session: false, is_restricted: false, name: arg.name, type: 'Computer', volume_percent: 100, supports_volume: true });
       return { device_id: this.sdk.deviceId };
+    }
+    if (cmd === 'disconnected') {
+      // Real SDK: disconnect() drops the device; a later connect() brings it back (same id here).
+      this.sdk.events.push('disconnect');
+      this.devices = this.devices.filter((d) => d.id !== this.sdk.deviceId);
+      if (this.player?.deviceId === this.sdk.deviceId) this.player = null;
+      return null;
     }
     if (cmd === 'unregister') {
       this.devices = this.devices.filter((d) => d.id !== this.sdk.deviceId);
@@ -623,11 +710,20 @@ export class FakeSpotify {
       if (arg.active) this.sdk.activated = true;
       return null;
     }
-    if (cmd === 'state') return this.sdkState();
+    if (cmd === 'state') {
+      const st = this.sdkState();
+      if (st && this.cfg.sdkStaleMs) {
+        // A snapshot from sdkStaleMs ago: position and timestamp both as of then.
+        st.timestamp = Date.now() - this.cfg.sdkStaleMs;
+        if (!st.paused) st.position = Math.max(0, st.position - this.cfg.sdkStaleMs);
+      }
+      return st;
+    }
     if (cmd === 'cmd') {
       const p = this.player;
       if (!p || p.deviceId !== this.sdk.deviceId) return null;
       this.sdk.events.push(`cmd:${arg.cmd}`);
+      if (this.cfg.sdkHang.includes(arg.cmd)) return new Promise(() => undefined);
       if (arg.cmd === 'pause') {
         p.posMs = this.pos();
         p.paused = true;
@@ -647,7 +743,7 @@ export class FakeSpotify {
   sdkScript(route) {
     this.log.push({ method: 'GET', path: 'sdk.scdn.co' + new URL(route.request().url()).pathname });
     if (this.cfg.sdk === 'no_script') return route.abort('failed');
-    const cfg = { mode: this.cfg.sdk, iosVolume: this.cfg.iosVolume };
+    const cfg = { mode: this.cfg.sdk, iosVolume: this.cfg.iosVolume, readyDelay: this.cfg.sdkReadyDelayMs ?? 60 };
     const src = `(() => {
   const CFG = ${JSON.stringify(cfg)};
   const call = (cmd, arg) => window.__fakeSpotify(cmd, arg);
@@ -664,10 +760,10 @@ export class FakeSpotify {
       if (CFG.mode === 'account_error') { setTimeout(() => this._emit('account_error', { message: 'This functionality is restricted to premium users only' }), 50); return true; }
       const r = await call('register', { token, name: this._o.name });
       if (r && r.error) { setTimeout(() => this._emit('authentication_error', { message: 'Invalid token scopes.' }), 30); return true; }
-      setTimeout(() => this._emit('ready', { device_id: r.device_id }), 60);
+      setTimeout(() => this._emit('ready', { device_id: r.device_id }), CFG.readyDelay);
       return true;
     }
-    disconnect() { call('unregister'); }
+    disconnect() { call('disconnected'); }
     getCurrentState() { return call('state'); }
     setName() { return Promise.resolve(); }
     getVolume() { return Promise.resolve(CFG.iosVolume ? 1 : this._vol); }

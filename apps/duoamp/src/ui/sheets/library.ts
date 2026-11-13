@@ -117,6 +117,10 @@ function signedIn(ctx: AppContext, sp: SpotifyService, body: HTMLElement, close:
   const account = h('span', '', '');
   const modeText = h('span', '', '');
   const fallback = h('p', 'dim', '');
+  const scopeWarn = h('div', 'sheet-warn', [
+    h('span', '', pixelText('THIS SIGN-IN IS MISSING PERMISSIONS DUOAMP NOW NEEDS. RECONNECT TO GRANT THEM.')),
+  ]);
+  const scopeLine = h('div', 'sheet-line', [sheetButton('RECONNECT', () => sp.reconnect(), 'btn-reconnect')]);
   const chips = h('div', 'menu-chips');
   const modeBtns = new Map<ModePref, HTMLButtonElement>();
   for (const [m, label] of [['auto', 'AUTO'], ['sdk', 'IN BROWSER'], ['connect', 'REMOTE']] as Array<[ModePref, string]>) {
@@ -140,6 +144,8 @@ function signedIn(ctx: AppContext, sp: SpotifyService, body: HTMLElement, close:
 
   body.append(
     h('div', 'sheet-big', 'SPOTIFY'),
+    scopeWarn,
+    scopeLine,
     h('div', 'sheet-row', [h('span', '', 'ACCOUNT'), account]),
     h('div', 'sheet-row', [h('span', '', 'MODE'), modeText]),
     h('div', 'sheet-line', [chips]),
@@ -185,6 +191,7 @@ function signedIn(ctx: AppContext, sp: SpotifyService, body: HTMLElement, close:
   };
 
   const update = () => {
+    scopeWarn.style.display = scopeLine.style.display = sp.missingScopes.length ? '' : 'none';
     account.textContent = pixelText(sp.profile?.displayName ?? '...');
     const e = sp.engine;
     modeText.textContent = sp.busy ? 'STARTING...' : e?.mode === 'sdk' ? 'IN BROWSER' : e?.mode === 'connect' ? 'REMOTE CONTROL' : '-';

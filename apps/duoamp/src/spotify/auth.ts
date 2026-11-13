@@ -1,4 +1,5 @@
 import { ACCOUNTS_ORIGIN, SCOPES } from './config';
+import { TRACK_CACHE_KEY } from './storageKeys';
 import { diag, registerSecret } from './diag';
 
 /**
@@ -68,12 +69,23 @@ function readJson<T>(key: string): T | null {
   return null;
 }
 
-function writeJson(key: string, v: unknown, both = false) {
+/** Returns false when localStorage refused the write (quota, disabled storage). */
+function writeJson(key: string, v: unknown, both = false): boolean {
   const s = JSON.stringify(v);
+  let ok = true;
   try {
     localStorage.setItem(key, s);
   } catch {
-    /* fall through to session storage */
+    // Most likely the quota: the playlist cache is the only big thing we store. Drop it and retry once.
+    ok = false;
+    try {
+      localStorage.removeItem(TRACK_CACHE_KEY);
+      localStorage.setItem(key, s);
+      ok = true;
+      diag.warn('auth', `storage full: cleared the track cache to save ${key}`);
+    } catch {
+      diag.error('auth', `could not save ${key} to localStorage (storage full or disabled)`);
+    }
   }
   if (both) {
     try {
@@ -82,6 +94,7 @@ function writeJson(key: string, v: unknown, both = false) {
       /* ignore */
     }
   }
+  return ok;
 }
 
 function remove(key: string) {
@@ -172,6 +185,7 @@ export class SpotifyAuth {
     if (t) {
       registerSecret(t.accessToken);
       registerSecret(t.refreshToken);
+      // On failure the tokens still work for this page load; the user will have to sign in again next time.
       writeJson(TOKENS_KEY, t);
     } else remove(TOKENS_KEY);
     this.emit();
@@ -188,6 +202,16 @@ export class SpotifyAuth {
 
   get signedIn(): boolean {
     return this.tokens !== null;
+  }
+
+  /** Required scopes the stored grant lacks (an older sign-in, or the user unticked some). */
+  missingScopes(): string[] {
+    const t = this.tokens;
+    if (!t) return [];
+    // Spotify reports the granted scopes; an empty value means we cannot tell, so assume fine.
+    if (!t.scope.trim()) return [];
+    const granted = new Set(t.scope.split(/\s+/));
+    return SCOPES.filter((s) => !granted.has(s));
   }
 
   /** Safe-to-show token facts (no token values). */
@@ -227,9 +251,17 @@ export class SpotifyAuth {
     navigate(`${ACCOUNTS_ORIGIN}/authorize?${params}`);
   }
 
-  /** Finish sign-in from the callback parameters. Throws AuthError. */
-  async completeLogin(cb: AuthCallback): Promise<void> {
+  /**
+   * Finish sign-in from the callback parameters. Throws AuthError. Returns false
+   * when the callback was ignored: a stale ?code= with no pending sign-in while
+   * already signed in (e.g. browser Back after signing in).
+   */
+  async completeLogin(cb: AuthCallback): Promise<boolean> {
     const pending = readJson<Pending>(PKCE_KEY);
+    if (!pending && this.signedIn) {
+      diag.info('auth', 'ignored a stale sign-in callback (already signed in)');
+      return false;
+    }
     remove(PKCE_KEY);
     if (cb.code) registerSecret(cb.code);
     if (cb.error) {
@@ -257,6 +289,7 @@ export class SpotifyAuth {
     this.lastSignOutReason = null;
     this.save(t);
     diag.info('auth', `signed in; access token valid until ${new Date(t.expiresAt).toISOString()}`);
+    return true;
   }
 
   private async tokenRequest(body: URLSearchParams, clientId: string, prev: TokenSet | null): Promise<TokenSet> {
@@ -328,6 +361,14 @@ export class SpotifyAuth {
         return next;
       } catch (e) {
         if (e instanceof AuthError && e.code === 'invalid_grant') {
+          // Another tab may have refreshed (and rotated the refresh token) meanwhile: adopt its tokens.
+          const stored = this.load();
+          if (stored && stored.refreshToken !== t.refreshToken) {
+            diag.info('auth', 'refresh token was replaced by another tab; using the newer sign-in');
+            this.tokens = stored;
+            this.emit();
+            return stored;
+          }
           this.signOut('SPOTIFY SIGN-IN EXPIRED. PLEASE CONNECT AGAIN.');
         }
         throw e;

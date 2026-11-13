@@ -12,6 +12,7 @@ import { loadPrefs, readUrlOverrides } from './prefs';
 import { takeAuthCallback } from './spotify/auth';
 import { computeRedirectUri, redirectUri } from './spotify/config';
 import { SpotifyService } from './spotify/service';
+import { diag } from './spotify/diag';
 import { App } from './ui/app';
 
 // The OAuth return (?code=&state= or ?error=) is taken and the URL cleaned
@@ -42,4 +43,4 @@ if (url.autoplay && !spotify.signedIn) void engine.play();
 void spotify.init(authCallback);
 
 // Test hook for the Playwright scripts and manual poking: dev server, or ?test=1.
-if (import.meta.env.DEV || url.test) (window as unknown as { duoamp: unknown }).duoamp = { engine, app, prefs, spotify, computeRedirectUri };
+if (import.meta.env.DEV || url.test) (window as unknown as { duoamp: unknown }).duoamp = { engine, app, prefs, spotify, computeRedirectUri, diag };

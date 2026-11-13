@@ -160,7 +160,7 @@ export class App {
     // Audio unlock: engines that need a user gesture (iOS) get called synchronously
     // inside every gesture, before any button handler runs (capture phase).
     for (const ev of ['pointerup', 'touchend', 'keydown', 'click'] as const) {
-      window.addEventListener(ev, () => engine.userGesture(), { capture: true, passive: true });
+      window.addEventListener(ev, () => engine.userGesture(ev), { capture: true, passive: true });
     }
 
     eq.subscribe(() => {

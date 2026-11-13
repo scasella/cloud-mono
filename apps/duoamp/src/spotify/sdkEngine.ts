@@ -1,6 +1,6 @@
 import type { Capabilities } from '../engine/types';
 import type { SpotifyApi } from './api';
-import type { SpotifyAuth } from './auth';
+import { AuthError, type SpotifyAuth } from './auth';
 import { DEVICE_NAME, SDK_URL } from './config';
 import { diag } from './diag';
 import { SpotifyEngineBase, type PlayRequest } from './engineBase';
@@ -45,6 +45,9 @@ export class SdkStartError extends Error {
 }
 
 let sdkLoad: Promise<SdkGlobal> | null = null;
+/** The one <script> tag; reused while it is still loading, replaced only after it failed. */
+let sdkScript: HTMLScriptElement | null = null;
+let sdkScriptFailed = false;
 
 /** Load https://sdk.scdn.co/spotify-player.js once; onSpotifyWebPlaybackSDKReady is defined first. */
 export function loadSdk(timeoutMs = 15000): Promise<SdkGlobal> {
@@ -57,13 +60,23 @@ export function loadSdk(timeoutMs = 15000): Promise<SdkGlobal> {
       if (window.Spotify?.Player) resolve(window.Spotify);
       else reject(new SdkStartError('script_load_failed', 'SDK ready without Spotify.Player'));
     };
-    const s = document.createElement('script');
-    s.src = SDK_URL;
-    s.async = true;
-    s.onerror = () => {
+    const fail = () => {
+      sdkScriptFailed = true;
       clearTimeout(timer);
       reject(new SdkStartError('script_load_failed', 'SDK script failed to load'));
     };
+    if (sdkScript && !sdkScriptFailed) {
+      // A previous attempt timed out but the tag may still finish loading: wait for it.
+      sdkScript.addEventListener('error', fail, { once: true });
+      return;
+    }
+    sdkScript?.remove();
+    sdkScriptFailed = false;
+    const s = document.createElement('script');
+    s.src = SDK_URL;
+    s.async = true;
+    s.addEventListener('error', fail, { once: true });
+    sdkScript = s;
     document.head.append(s);
   }).catch((e) => {
     sdkLoad = null;
@@ -78,8 +91,15 @@ export interface SdkHooks {
   onDevice(): void;
 }
 
-/** Autoplay failures (playback arrived paused for want of a gesture) before falling back. */
+/**
+ * Autoplay failures that followed a play request made here before falling back.
+ * Failures after a transfer from elsewhere do not count: on iOS "the playback does
+ * not start automatically after transferring playback" (Spotify SDK troubleshooting).
+ */
 const AUTOPLAY_FAILS_BEFORE_FALLBACK = 2;
+/** An autoplay_failed within this long after a local play request counts against the SDK. */
+const AUTOPLAY_ATTRIBUTION_MS = 10_000;
+const RECONNECT_BACKOFF_MS = [2000, 5000, 15000, 30000];
 const RESYNC_MS = 5000;
 
 /** Heuristic: iOS / iPadOS WebKit, where the SDK cannot set volume. Confirmed by a probe after ready. */
@@ -97,9 +117,16 @@ export class SdkEngine extends SpotifyEngineBase {
   private autoplayFails = 0;
   /** activateElement() succeeded inside a gesture and audio has played since. */
   private unlocked = false;
-  private lastActivate = 0;
+  private lastActivate = new Map<string, number>();
   private resync: number | undefined;
   private authRetries = 0;
+  private reconnectTimer: number | undefined;
+  private reconnectAttempt = 0;
+  private everReady = false;
+  private onVis = () => {
+    if (!document.hidden && this.player && !this.ready) this.reconnect('page visible');
+  };
+  reconnects = 0;
   sdkEvents: string[] = [];
 
   constructor(api: SpotifyApi, private auth: SpotifyAuth, private hooks: SdkHooks, opts: { volume: number }) {
@@ -121,9 +148,7 @@ export class SdkEngine extends SpotifyEngineBase {
     this.ev('script loaded');
     const player = new Spotify.Player({
       name: DEVICE_NAME,
-      getOAuthToken: (cb) => {
-        this.auth.getAccessToken().then(cb, () => cb(''));
-      },
+      getOAuthToken: (cb) => this.provideToken(cb, 0),
       volume: this.volume,
       enableMediaSession: true,
     });
@@ -142,9 +167,17 @@ export class SdkEngine extends SpotifyEngineBase {
       player.addListener('ready', (a) => {
         this.deviceId = (a as { device_id?: string })?.device_id ?? null;
         this.ready = true;
+        this.authRetries = 0;
+        this.reconnectAttempt = 0;
+        if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
         this.ev('ready', `device ${this.deviceId?.slice(0, 8) ?? '?'}...`);
         this.hooks.onDevice();
-        void this.probeVolume();
+        if (this.everReady) {
+          this.notice({ level: 'info', text: 'SPOTIFY PLAYER BACK ONLINE', code: 'sdk_ready_again' });
+          void this.refreshState();
+        } else void this.probeVolume();
+        this.everReady = true;
         done();
       });
       player.addListener('not_ready', () => {
@@ -152,6 +185,7 @@ export class SdkEngine extends SpotifyEngineBase {
         this.ev('not_ready');
         this.notice({ level: 'warn', text: 'SPOTIFY PLAYER WENT OFFLINE, RECONNECTING...', code: 'sdk_not_ready' });
         this.hooks.onDevice();
+        this.scheduleReconnect();
       });
       player.addListener('player_state_changed', (s) => {
         if (s === null && this.remote) this.notice({ level: 'info', text: 'PLAYBACK MOVED TO ANOTHER DEVICE', code: 'sdk_inactive' });
@@ -163,11 +197,19 @@ export class SdkEngine extends SpotifyEngineBase {
         this.applyRemote(st);
       });
       player.addListener('autoplay_failed', () => {
-        this.autoplayFails++;
-        this.ev('autoplay_failed', `#${this.autoplayFails}`);
         this.unlocked = false;
         // Playback arrived paused: show that now, not the optimistic "playing".
         this.clearHolds();
+        const ours = performance.now() - this.lastPlayRequestAt < AUTOPLAY_ATTRIBUTION_MS;
+        if (!ours) {
+          // Transferred here from elsewhere (or resumed remotely): iOS never auto-starts those.
+          this.ev('autoplay_failed', '(not after a local play; not counted)');
+          this.notice({ level: 'info', text: 'PLAYBACK MOVED HERE: TAP PLAY TO START AUDIO', code: 'autoplay_transfer' });
+          void this.refreshState();
+          return;
+        }
+        this.autoplayFails++;
+        this.ev('autoplay_failed', `#${this.autoplayFails}`);
         if (this.autoplayFails >= AUTOPLAY_FAILS_BEFORE_FALLBACK) {
           this.hooks.onFatal('autoplay_failed', 'THIS BROWSER BLOCKED AUDIO; SWITCHING TO REMOTE CONTROL');
         } else {
@@ -196,6 +238,8 @@ export class SdkEngine extends SpotifyEngineBase {
         } else {
           this.notice({ level: 'error', text: 'SPOTIFY REJECTED THE SIGN-IN FOR PLAYBACK', code: 'authentication_error' });
           if (!settled) done(new SdkStartError('authentication_error', m));
+          // Already running: the player is dead now, so hand over to remote control.
+          else this.hooks.onFatal('authentication_error', 'IN-BROWSER PLAYBACK LOST ITS SIGN-IN; USING REMOTE CONTROL');
         }
       });
       player.addListener('account_error', (e) => {
@@ -219,6 +263,49 @@ export class SdkEngine extends SpotifyEngineBase {
     this.resync = window.setInterval(() => {
       if (!document.hidden && this.ready) void this.refreshState();
     }, RESYNC_MS);
+    document.addEventListener('visibilitychange', this.onVis);
+  }
+
+  /**
+   * Token for the SDK. A transient failure (network) is retried with backoff rather
+   * than handing the SDK an empty token, which it reports as authentication_error.
+   */
+  private provideToken(cb: (t: string) => void, attempt: number) {
+    this.auth.getAccessToken().then(cb, (e) => {
+      if (this.disposed) return;
+      if (e instanceof AuthError && e.code === 'network') {
+        const ms = Math.min(30_000, 1000 * 2 ** attempt);
+        diag.warn('sdk', `token unavailable (network); retrying in ${ms} ms`);
+        setTimeout(() => this.provideToken(cb, attempt + 1), ms);
+      } else cb(''); // signed out: the service is swapping to the demo anyway
+    });
+  }
+
+  private scheduleReconnect() {
+    if (this.disposed || this.reconnectTimer !== undefined) return;
+    const ms = RECONNECT_BACKOFF_MS[Math.min(this.reconnectAttempt, RECONNECT_BACKOFF_MS.length - 1)];
+    this.reconnectAttempt++;
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = undefined;
+      if (!this.ready) this.reconnect('after not_ready');
+    }, ms);
+  }
+
+  private reconnect(why: string) {
+    const p = this.player;
+    if (!p || this.disposed) return;
+    this.reconnects++;
+    this.ev('reconnect', why);
+    p.connect().then(
+      (ok) => {
+        if (!ok || !this.ready) this.scheduleReconnect();
+      },
+      () => this.scheduleReconnect(),
+    );
+    // If `ready` does not arrive, try again later.
+    window.setTimeout(() => {
+      if (!this.ready && !this.disposed) this.scheduleReconnect();
+    }, 8000);
   }
 
   /** setVolume is a no-op on iOS (getVolume stays 1): find out for real. */
@@ -237,16 +324,21 @@ export class SdkEngine extends SpotifyEngineBase {
     }
   }
 
-  /** Must run synchronously inside the gesture: iOS only unlocks audio from a tap. */
-  override userGesture() {
+  /**
+   * Must run synchronously inside the gesture: iOS only unlocks audio from a tap.
+   * Called for pointerup, touchend, click and keydown of the same tap; which of them
+   * WebKit accepts as a media-unlocking gesture is not documented, so each type
+   * gets its own call (debounced per type only).
+   */
+  override userGesture(kind = 'gesture') {
     const p = this.player;
     if (!p || this.unlocked) return;
     const now = performance.now();
-    if (now - this.lastActivate < 400) return;
-    this.lastActivate = now;
+    if (now - (this.lastActivate.get(kind) ?? -Infinity) < 300) return;
+    this.lastActivate.set(kind, now);
     try {
       p.activateElement().catch(() => undefined);
-      diag.info('sdk', 'activateElement() in gesture');
+      diag.info('sdk', `activateElement() in ${kind}`);
     } catch {
       /* older SDK without activateElement */
     }
@@ -271,7 +363,7 @@ export class SdkEngine extends SpotifyEngineBase {
     this.need();
     if (!req && this.remote) return this.player!.resume();
     // Starting from here also transfers playback to this browser.
-    await this.api.put('/me/player/play', { query: { device_id: this.deviceId }, body: req ?? undefined });
+    await this.api.put('/me/player/play', { command: true, query: { device_id: this.deviceId }, body: req ?? undefined });
   }
   protected async tPause() {
     if (this.remote) await this.need().pause();
@@ -289,10 +381,10 @@ export class SdkEngine extends SpotifyEngineBase {
     await this.need().setVolume(v);
   }
   protected async tShuffle(on: boolean) {
-    await this.api.put('/me/player/shuffle', { query: { state: on, device_id: this.deviceId } });
+    await this.api.put('/me/player/shuffle', { command: true, query: { state: on, device_id: this.deviceId } });
   }
   protected async tRepeat(mode: RepeatMode) {
-    await this.api.put('/me/player/repeat', { query: { state: mode, device_id: this.deviceId } });
+    await this.api.put('/me/player/repeat', { command: true, query: { state: mode, device_id: this.deviceId } });
   }
 
   describe() {
@@ -304,12 +396,15 @@ export class SdkEngine extends SpotifyEngineBase {
       volume: this.caps.volume ? 'CONTROLLABLE' : 'FIXED (DEVICE BUTTONS)',
       audioUnlocked: this.unlocked ? 'YES' : 'NO',
       autoplayFailures: String(this.autoplayFails),
+      reconnects: String(this.reconnects),
     };
   }
 
   override dispose() {
     super.dispose();
     if (this.resync !== undefined) clearInterval(this.resync);
+    if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+    document.removeEventListener('visibilitychange', this.onVis);
     try {
       this.player?.disconnect();
     } catch {

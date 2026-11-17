@@ -163,6 +163,19 @@ export class PlaylistWindow implements WinComponent {
         this.select(row);
       }
     });
+    // iOS Safari still zooms on a double tap inside this pan-y scroller (seen in the
+    // iOS 27.1 Simulator): the page zoomed and shifted mid-gesture and the second tap
+    // missed the row. Cancelling the second touchend stops the zoom. Rows use pointer
+    // events, not click, so nothing here depends on the default action.
+    let lastTouchEnd = -Infinity;
+    this.scroller.addEventListener(
+      'touchend',
+      (e) => {
+        if (e.timeStamp - lastTouchEnd < TOUCH.doubleTapMs + 80 && e.cancelable) e.preventDefault();
+        lastTouchEnd = e.timeStamp;
+      },
+      { passive: false },
+    );
     this.scroller.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && this.selected >= 0) void this.ctx.engine.playIndex(this.selected);
     });

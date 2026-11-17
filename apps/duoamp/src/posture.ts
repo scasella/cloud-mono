@@ -69,6 +69,8 @@ export function computePanes(
   gutter: number,
   segs?: DOMRectReadOnly[] | null,
   corner: { x: number; y: number } = { x: 0, y: 0 },
+  /** Where the hinge is (x for book, y for tabletop) when there are no segments; default: the middle. */
+  foldAt?: number,
 ): { panes: Rect[]; fold?: Rect } {
   // Edges with no system inset get a small corner inset so nothing sits under the rounded glass.
   const cx = insets.left > 0 ? insets.left : corner.x;
@@ -90,13 +92,13 @@ export function computePanes(
   if (posture === 'cover') return { panes: [clip({ x: 0, y: 0, w: W, h: H })] };
   if (posture === 'book') {
     // The fold is at the physical centre of the screen, not of the safe area.
-    const fx = W / 2;
+    const fx = foldAt ?? W / 2;
     return {
       panes: [clip({ x: 0, y: 0, w: fx - gutter / 2, h: H }), clip({ x: fx + gutter / 2, y: 0, w: W, h: H })],
       fold: { x: fx - gutter / 2, y: 0, w: gutter, h: H },
     };
   }
-  const fy = H / 2;
+  const fy = foldAt ?? H / 2;
   return {
     panes: [clip({ x: 0, y: 0, w: W, h: fy - gutter / 2 }), clip({ x: 0, y: fy + gutter / 2, w: W, h: H })],
     fold: { x: 0, y: fy - gutter / 2, w: W, h: gutter },
@@ -197,19 +199,54 @@ export function planLayout(input: PlanInput): LayoutPlan & { zoom: number } {
   const source: LayoutSource = input.layoutPref === 'auto' ? detected.source : 'override';
   const insets = readSafeAreaInsets();
   const useSegs = segs && ((posture === 'book' && detected.posture === 'book') || (posture === 'tabletop' && detected.posture === 'tabletop'));
-  const { panes, fold } = computePanes(posture, vw, vh, insets, DEVICE.foldGutter, useSegs ? segs : null, DEVICE.cornerInset);
+  const { panes, fold } = computePanes(posture, vw, vh, insets, DEVICE.foldGutter, useSegs ? segs : null, DEVICE.cornerInset, bleedFoldAt(posture, vh));
   return { mode: 'bleed', posture, source, screen: { w: vw, h: vh }, insets, panes, fold, zoom: 1, devicePosture: dp };
+}
+
+/**
+ * Hinge position in the viewport when the Viewport Segments API is unavailable.
+ * The hinge is at the middle of the physical display, but Safari's toolbar sits
+ * at the top in portrait, so the viewport is flush with the bottom edge of the
+ * display, not centred on it (measured in the iOS 27.1 Simulator with the
+ * segments flag on: split at innerHeight - 951 / 2). Book fills the full width.
+ */
+export function bleedFoldAt(posture: Posture, vh: number): number | undefined {
+  if (posture === 'tabletop') {
+    const half = DEVICE.tabletop.height / 2;
+    if (vh >= DEVICE.tabletop.height || vh <= half) return undefined;
+    return vh - half;
+  }
+  return undefined;
 }
 
 /** Calls `cb` whenever anything that can change the plan changes. */
 export function watchLayoutChanges(cb: () => void): () => void {
   let raf = 0;
+  let settle = 0;
   const schedule = () => {
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => cb());
+    // iOS Safari (iPhone Duo, fold flags on) updates window.viewport.segments
+    // after the rotation 'resize' with no event of its own, so plan once more
+    // after things settle.
+    clearTimeout(settle);
+    settle = window.setTimeout(() => cb(), DETECT.settleMs);
   };
   window.addEventListener('resize', schedule);
   window.addEventListener('orientationchange', schedule);
+  // iOS Safari fires window 'resize' before innerHeight settles when its tab bar
+  // shows or hides; the settled size only arrives with visualViewport 'resize'.
+  // Re-plan only when the layout viewport changed (not for the keyboard, which
+  // shrinks just the visual viewport and must not close an open sheet).
+  let lastW = window.innerWidth;
+  let lastH = window.innerHeight;
+  const onVisualResize = () => {
+    if (window.innerWidth === lastW && window.innerHeight === lastH) return;
+    lastW = window.innerWidth;
+    lastH = window.innerHeight;
+    schedule();
+  };
+  window.visualViewport?.addEventListener('resize', onVisualResize);
   const vp = (window as unknown as { viewport?: EventTarget }).viewport;
   vp?.addEventListener?.('segmentschange', schedule);
   const dp = devicePosture();
@@ -218,8 +255,11 @@ export function watchLayoutChanges(cb: () => void): () => void {
     .map((q) => window.matchMedia(q));
   mqs.forEach((m) => m.addEventListener?.('change', schedule));
   return () => {
+    cancelAnimationFrame(raf);
+    clearTimeout(settle);
     window.removeEventListener('resize', schedule);
     window.removeEventListener('orientationchange', schedule);
+    window.visualViewport?.removeEventListener('resize', onVisualResize);
     vp?.removeEventListener?.('segmentschange', schedule);
     dp?.removeEventListener?.('change', schedule);
     mqs.forEach((m) => m.removeEventListener?.('change', schedule));

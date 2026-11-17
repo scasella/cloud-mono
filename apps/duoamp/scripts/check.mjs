@@ -211,8 +211,39 @@ try {
   ok((await page.getAttribute('html', 'data-posture')) === 'book', 'layout override persisted');
   ok((await page.getAttribute('meta[name="theme-color"]', 'content')) === '#08080d', 'theme-color tracks skin');
 
+  // Auto-detection at Safari viewport sizes measured in the iOS 27.1 iPhone Duo Simulator
+  // (with and without Safari's tab bar, cover portrait and landscape).
+  for (const [w, h, want] of [[382, 580, 'cover'], [594, 368, 'cover'], [951, 543, 'book'], [951, 589, 'book'], [669, 825, 'tabletop'], [669, 871, 'tabletop']]) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto(`${server.url}?test=1&sim=0&layout=auto`);
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    ok((await page.getAttribute('html', 'data-posture')) === want, `auto layout at measured Safari ${w}x${h} -> ${want}`);
+  }
+
+  // Without segments, the tabletop fold sits on the physical hinge: Safari's viewport is
+  // flush with the bottom of the 951-pt display (measured with the segments flag: split at 825 - 475.5).
+  await page.setViewportSize({ width: 669, height: 825 });
+  await page.goto(`${server.url}?test=1&sim=0&layout=auto`);
+  const fold = await page.evaluate(() => window.duoamp.app.plan.fold);
+  ok(fold && Math.abs(fold.y + fold.h / 2 - 349.5) < 0.6, `tabletop fold at the hinge without segments (${fold && fold.y + fold.h / 2})`);
+
+  // Layout follows a resize that lands only on visualViewport (Safari's tab bar hiding).
+  await page.setViewportSize({ width: 669, height: 740 });
+  await page.goto(`${server.url}?test=1&sim=0&layout=auto`);
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  ok((await page.getAttribute('html', 'data-posture')) === 'cover', '669x740 starts as cover');
+  await page.evaluate(() => {
+    // Simulate: layout viewport grows with no window 'resize', then visualViewport fires.
+    Object.defineProperty(window, 'innerHeight', { configurable: true, get: () => 871 });
+    window.visualViewport.dispatchEvent(new Event('resize'));
+  });
+  ok(await page.waitForFunction(() => document.documentElement.dataset.posture === 'tabletop', null, { timeout: 2000 }).then(() => true, () => false), 'relayout on visualViewport resize (tab bar hides)');
+  await page.setViewportSize({ width: 669, height: 871 });
+
   // Nothing overflows its window or pane, in every posture x skin.
-  for (const size of [[382, 600], [951, 600], [867, 600], [669, 880]]) {
+  for (const size of [[382, 600], [951, 600], [867, 600], [669, 880], [951, 543], [669, 825]]) {
     for (const skin of ['light', 'classic']) {
       for (const eq of [false, true]) {
         await page.setViewportSize({ width: size[0], height: size[1] });

@@ -64,9 +64,16 @@ export const DETECT = {
   /** Outer display: shorter side <= this AND longer side <= coverMaxLong. */
   coverMaxShort: 470,
   coverMaxLong: 700,
-  /** Inner display: shorter side >= innerMinShort AND longer side >= innerMinLong. */
-  innerMinShort: 560,
-  innerMinLong: 840,
+  /**
+   * Inner display: shorter side >= innerMinShort AND longer side >= innerMinLong.
+   * Measured in the iOS 27.1 Simulator (Safari, iPhone Duo): inner landscape
+   * 951 x 543 (tab bar showing) to 951 x 589; inner portrait 669 x 825 to 669 x 871.
+   * Cover never exceeds 466 x 678. Set in the gap, below Safari's smallest inner size.
+   */
+  innerMinShort: 500,
+  innerMinLong: 760,
+  /** Delay (ms) for the second layout pass after a resize/posture change, once Safari's segments settle. */
+  settleMs: 400,
   /** Anything larger than these is treated as desktop/tablet -> simulator. */
   simMinShort: 700,
   simMinLong: 1000,

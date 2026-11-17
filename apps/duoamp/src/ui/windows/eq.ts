@@ -127,7 +127,8 @@ export class EqWindow implements WinComponent {
     } else {
       // Compact strip (tabletop slot): controls in a left column, no graph.
       const top = 16;
-      const th = Math.max(20, hU - top - 10);
+      // Floor 14u so labels stay inside the strip at its 40u minimum (tabletop at the real hinge).
+      const th = Math.max(14, hU - top - 10);
       place(this.onBtn.el, 6, 17, 22, 10);
       place(this.autoBtn.el, 30, 17, 28, 10);
       place(this.presetsBtn, 6, 29, 52, 10);

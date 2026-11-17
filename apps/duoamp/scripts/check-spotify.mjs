@@ -982,8 +982,9 @@ try {
     ok(v.serviceLabel === '' && v.n === 139 && v.sourceLabel === 'DEMO LIBRARY', 'demo engine back');
     ok((await page.evaluate(() => ['tokens.v1', 'source.v1', 'cache.v1', 'device.v1'].map((k) => localStorage.getItem('duoamp.spotify.' + k)))).every((x) => x === null), 'tokens, last source, track cache and remembered device cleared');
     ok(!!(await page.evaluate(() => localStorage.getItem('duoamp.spotify.clientId'))), 'Client ID kept');
-    ok(await page.isVisible('.sheet-library .btn-connect'), 'sheet switches to the connect view');
-    ok((await page.evaluate(() => document.querySelectorAll('.pl-row').length)) === 139, 'demo playlist rows back');
+    // The sheet and playlist re-render after the engine swap settles, not synchronously with it.
+    ok(await until(page, () => !!document.querySelector('.sheet-library .btn-connect')), 'sheet switches to the connect view');
+    ok(await until(page, () => document.querySelectorAll('.pl-row').length === 139), 'demo playlist rows back');
     await page.reload();
     ok(!(await svc(page)).signedIn, 'still signed out after reload');
     await close(s);

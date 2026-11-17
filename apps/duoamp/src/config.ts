@@ -55,6 +55,12 @@ export const DEVICE = {
    * where the system safe area is 0, so controls clear the rounded corners.
    */
   cornerInset: { x: 0, y: 0 },
+  /**
+   * Home Screen web app on the inner screen: in landscape the page reaches the
+   * display's top edge (safe-area top 0, left 0) and the 28 pt rounded corner
+   * clipped Main's menu button. 14 pt clears it (checked in the iOS 27.1 Simulator).
+   */
+  standaloneInnerCornerInset: { x: 0, y: 14 },
   /** Bezel thickness drawn around the display in the simulator. */
   bezel: 14,
 } as const;

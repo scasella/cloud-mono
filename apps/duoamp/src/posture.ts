@@ -199,22 +199,34 @@ export function planLayout(input: PlanInput): LayoutPlan & { zoom: number } {
   const source: LayoutSource = input.layoutPref === 'auto' ? detected.source : 'override';
   const insets = readSafeAreaInsets();
   const useSegs = segs && ((posture === 'book' && detected.posture === 'book') || (posture === 'tabletop' && detected.posture === 'tabletop'));
-  const { panes, fold } = computePanes(posture, vw, vh, insets, DEVICE.foldGutter, useSegs ? segs : null, DEVICE.cornerInset, bleedFoldAt(posture, vh));
+  const homeScreen = isStandalone();
+  // Standalone on the inner screen, the page reaches the display's rounded top corners.
+  const corner = homeScreen && posture !== 'cover' ? DEVICE.standaloneInnerCornerInset : DEVICE.cornerInset;
+  const { panes, fold } = computePanes(posture, vw, vh, insets, DEVICE.foldGutter, useSegs ? segs : null, corner, bleedFoldAt(posture, vh, homeScreen));
   return { mode: 'bleed', posture, source, screen: { w: vw, h: vh }, insets, panes, fold, zoom: 1, devicePosture: dp };
+}
+
+/** Home Screen web app (standalone display mode). */
+export function isStandalone(): boolean {
+  const nav = navigator as Navigator & { standalone?: boolean };
+  return nav.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
 }
 
 /**
  * Hinge position in the viewport when the Viewport Segments API is unavailable.
- * The hinge is at the middle of the physical display, but Safari's toolbar sits
- * at the top in portrait, so the viewport is flush with the bottom edge of the
- * display, not centred on it (measured in the iOS 27.1 Simulator with the
- * segments flag on: split at innerHeight - 951 / 2). Book fills the full width.
+ * The hinge is at the middle of the physical display, but the viewport is not
+ * centred on it (measured in the iOS 27.1 Simulator with the segments flag on):
+ * - Safari portrait: toolbar on top, viewport flush with the bottom edge,
+ *   split at innerHeight - 951 / 2 (669 x 825 -> 349.5).
+ * - Home Screen portrait: viewport flush with the top edge, split at 951 / 2
+ *   (669 x 930 -> 475.5).
+ * Book fills the full width in both, so the middle is right.
  */
-export function bleedFoldAt(posture: Posture, vh: number): number | undefined {
+export function bleedFoldAt(posture: Posture, vh: number, standalone = false): number | undefined {
   if (posture === 'tabletop') {
     const half = DEVICE.tabletop.height / 2;
     if (vh >= DEVICE.tabletop.height || vh <= half) return undefined;
-    return vh - half;
+    return standalone ? half : vh - half;
   }
   return undefined;
 }

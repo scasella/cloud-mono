@@ -228,6 +228,22 @@ try {
   const fold = await page.evaluate(() => window.duoamp.app.plan.fold);
   ok(fold && Math.abs(fold.y + fold.h / 2 - 349.5) < 0.6, `tabletop fold at the hinge without segments (${fold && fold.y + fold.h / 2})`);
 
+  // Home Screen (standalone) on the inner screen, measured in the Simulator: portrait 669x930 is
+  // flush with the top of the display (hinge at 475.5); landscape 951x669 reaches the rounded top corners.
+  {
+    const sctx = await browser.newContext({ viewport: { width: 669, height: 930 }, deviceScaleFactor: 3, hasTouch: true });
+    await sctx.addInitScript(() => Object.defineProperty(navigator, 'standalone', { configurable: true, get: () => true }));
+    const sp = await sctx.newPage();
+    await sp.goto(`${server.url}?test=1&sim=0&layout=auto`);
+    const sf = await sp.evaluate(() => window.duoamp.app.plan.fold);
+    ok(sf && Math.abs(sf.y + sf.h / 2 - 475.5) < 0.6, `standalone tabletop fold at the hinge without segments (${sf && sf.y + sf.h / 2})`);
+    await sp.setViewportSize({ width: 951, height: 669 });
+    await sp.goto(`${server.url}?test=1&sim=0&layout=auto`);
+    const sb = await sp.evaluate(() => window.duoamp.app.plan);
+    ok(sb.posture === 'book' && sb.panes[0].y >= 14, `standalone book clears the rounded top corner (pane top ${sb.panes[0].y})`);
+    await sctx.close();
+  }
+
   // Layout follows a resize that lands only on visualViewport (Safari's tab bar hiding).
   await page.setViewportSize({ width: 669, height: 740 });
   await page.goto(`${server.url}?test=1&sim=0&layout=auto`);
